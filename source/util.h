@@ -15,7 +15,9 @@
 
 #define IS_N3DS                 (*(vu32 *)0x1FF80030 >= 6) // APPMEMTYPE. Hacky but doesn't use APT
 
-void panic(Result res)
+#define TRY(expr)               if(R_FAILED(res = (expr))) return res;
+
+static void panic(Result res)
 {
     (void)res;
     __builtin_trap();

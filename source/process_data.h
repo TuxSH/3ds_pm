@@ -4,6 +4,9 @@
 #include <3ds/synchronization.h>
 #include "intrusive_list.h"
 
+#define FOREACH_PROCESS(list, process) \
+for (process = ProcessDataList_GetFirst(list); !ProcessDataList_TestEnd(list, process); process = ProcessDataList_GetNext(process))
+
 typedef struct ProcessData {
     IntrusiveNode node;
     Handle handle;
@@ -20,6 +23,13 @@ typedef struct ProcessDataList {
     IntrusiveList list;
     IntrusiveList freeList;
 } ProcessDataList;
+
+static inline void ProcessDataList_Init(ProcessDataList *list, void *buf, size_t num)
+{
+    IntrusiveList_Init(&list->list);
+    IntrusiveList_CreateFromBuffer(&list->freeList, buf, sizeof(ProcessData), sizeof(ProcessData) * num);
+    RecursiveLock_Init(&list->lock);
+}
 
 static inline void ProcessDataList_Lock(ProcessDataList *list)
 {
@@ -76,7 +86,9 @@ static inline void ProcessDataList_Delete(ProcessDataList *list, ProcessData *pr
 
 static inline ProcessData *ProcessDataList_FindProcessById(const ProcessDataList *list, u32 pid)
 {
-    for (ProcessData *process = ProcessDataList_GetFirst(list); !ProcessDataList_TestEnd(list, process); process = ProcessDataList_GetNext(process)) {
+    ProcessData *process;
+
+    FOREACH_PROCESS(list, process) {
         if (process->pid == pid) {
             return process;
         }
@@ -87,7 +99,9 @@ static inline ProcessData *ProcessDataList_FindProcessById(const ProcessDataList
 
 static inline ProcessData *ProcessDataList_FindProcessByHandle(const ProcessDataList *list, Handle handle)
 {
-    for (ProcessData *process = ProcessDataList_GetFirst(list); !ProcessDataList_TestEnd(list, process); process = ProcessDataList_GetNext(process)) {
+    ProcessData *process;
+
+    FOREACH_PROCESS(list, process) {
         if (process->handle == handle) {
             return process;
         }

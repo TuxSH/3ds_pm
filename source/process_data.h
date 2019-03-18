@@ -7,6 +7,12 @@
 #define FOREACH_PROCESS(list, process) \
 for (process = ProcessDataList_GetFirst(list); !ProcessDataList_TestEnd(list, process); process = ProcessDataList_GetNext(process))
 
+typedef enum TerminationStatus {
+    TERMSTATUS_RUNNING              = 0,
+    TERMSTATUS_NOTIFICATION_SENT    = 1,
+    TERMSTATUS_NOTIFICATION_FAILED  = 2,
+} TerminationStatus;
+
 typedef struct ProcessData {
     IntrusiveNode node;
     Handle handle;
@@ -14,7 +20,7 @@ typedef struct ProcessData {
     u64 titleId;
     u64 programHandle;
     u16 flags;
-    u8 terminationStatus;
+    TerminationStatus terminationStatus;
     u8 refcount; // note: 0-based (ie. it's 0 if it's an app or a dependency of a single process) ?
 } ProcessData;
 

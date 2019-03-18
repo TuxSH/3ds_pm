@@ -7,6 +7,14 @@
 #define FOREACH_PROCESS(list, process) \
 for (process = ProcessList_GetFirst(list); !ProcessList_TestEnd(list, process); process = ProcessList_GetNext(process))
 
+enum {
+    PROCESSFLAG_NOTIFY_TERMINATION              = BIT(0),
+    PROCESSFLAG_KIP                             = BIT(1),
+    PROCESSFLAG_DEPENDENCIES_LOADED             = BIT(2),
+    PROCESSFLAG_AUTOLOADED                      = BIT(3),
+    PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED   = BIT(4),
+};
+
 typedef enum TerminationStatus {
     TERMSTATUS_RUNNING              = 0,
     TERMSTATUS_NOTIFICATION_SENT    = 1,
@@ -19,9 +27,10 @@ typedef struct ProcessData {
     u32 pid;
     u64 titleId;
     u64 programHandle;
-    u16 flags;
+    u8 flags;
+    u8 terminatedNotificationVariation;
     TerminationStatus terminationStatus;
-    u8 refcount; // note: 0-based (ie. it's 0 if it's an app or a dependency of a single process) ?
+    u8 refcount;
 } ProcessData;
 
 typedef struct ProcessList {

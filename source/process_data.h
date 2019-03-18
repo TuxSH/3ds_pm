@@ -5,7 +5,7 @@
 #include "intrusive_list.h"
 
 #define FOREACH_PROCESS(list, process) \
-for (process = ProcessDataList_GetFirst(list); !ProcessDataList_TestEnd(list, process); process = ProcessDataList_GetNext(process))
+for (process = ProcessList_GetFirst(list); !ProcessList_TestEnd(list, process); process = ProcessList_GetNext(process))
 
 typedef enum TerminationStatus {
     TERMSTATUS_RUNNING              = 0,
@@ -24,55 +24,55 @@ typedef struct ProcessData {
     u8 refcount; // note: 0-based (ie. it's 0 if it's an app or a dependency of a single process) ?
 } ProcessData;
 
-typedef struct ProcessDataList {
+typedef struct ProcessList {
     RecursiveLock lock;
     IntrusiveList list;
     IntrusiveList freeList;
-} ProcessDataList;
+} ProcessList;
 
-static inline void ProcessDataList_Init(ProcessDataList *list, void *buf, size_t num)
+static inline void ProcessList_Init(ProcessList *list, void *buf, size_t num)
 {
     IntrusiveList_Init(&list->list);
     IntrusiveList_CreateFromBuffer(&list->freeList, buf, sizeof(ProcessData), sizeof(ProcessData) * num);
     RecursiveLock_Init(&list->lock);
 }
 
-static inline void ProcessDataList_Lock(ProcessDataList *list)
+static inline void ProcessList_Lock(ProcessList *list)
 {
     RecursiveLock_Lock(&list->lock);
 }
 
-static inline void ProcessDataList_Unlock(ProcessDataList *list)
+static inline void ProcessList_Unlock(ProcessList *list)
 {
     RecursiveLock_Unlock(&list->lock);
 }
 
-static inline ProcessData *ProcessDataList_GetNext(const ProcessData *process)
+static inline ProcessData *ProcessList_GetNext(const ProcessData *process)
 {
     return (ProcessData *)process->node.next;
 }
 
-static inline ProcessData *ProcessDataList_GetPrev(const ProcessData *process)
+static inline ProcessData *ProcessList_GetPrev(const ProcessData *process)
 {
     return (ProcessData *)process->node.next;
 }
 
-static inline ProcessData *ProcessDataList_GetFirst(const ProcessDataList *list)
+static inline ProcessData *ProcessList_GetFirst(const ProcessList *list)
 {
     return (ProcessData *)list->list.first;
 }
 
-static inline ProcessData *ProcessDataList_GetLast(const ProcessDataList *list)
+static inline ProcessData *ProcessList_GetLast(const ProcessList *list)
 {
     return (ProcessData *)list->list.last;
 }
 
-static inline bool ProcessDataList_TestEnd(const ProcessDataList *list, const ProcessData *process)
+static inline bool ProcessList_TestEnd(const ProcessList *list, const ProcessData *process)
 {
     return IntrusiveList_TestEnd(&list->list, &process->node);
 }
 
-static inline ProcessData *ProcessDataList_New(ProcessDataList *list)
+static inline ProcessData *ProcessList_New(ProcessList *list)
 {
     if (IntrusiveList_TestEnd(&list->freeList, list->freeList.first)) {
         return NULL;
@@ -84,13 +84,13 @@ static inline ProcessData *ProcessDataList_New(ProcessDataList *list)
     return (ProcessData *)nd;
 }
 
-static inline void ProcessDataList_Delete(ProcessDataList *list, ProcessData *process)
+static inline void ProcessList_Delete(ProcessList *list, ProcessData *process)
 {
     IntrusiveList_Erase(&process->node);
     IntrusiveList_InsertAfter(list->freeList.first, &process->node);
 }
 
-static inline ProcessData *ProcessDataList_FindProcessById(const ProcessDataList *list, u32 pid)
+static inline ProcessData *ProcessList_FindProcessById(const ProcessList *list, u32 pid)
 {
     ProcessData *process;
 
@@ -103,7 +103,7 @@ static inline ProcessData *ProcessDataList_FindProcessById(const ProcessDataList
     return NULL;
 }
 
-static inline ProcessData *ProcessDataList_FindProcessByHandle(const ProcessDataList *list, Handle handle)
+static inline ProcessData *ProcessList_FindProcessByHandle(const ProcessList *list, Handle handle)
 {
     ProcessData *process;
 

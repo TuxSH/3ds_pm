@@ -4,7 +4,7 @@
 #include "process_data.h"
 
 typedef struct Manager {
-    ProcessDataList processList;
+    ProcessList processList;
     ProcessData *applicationData;
     Handle reslimits[4];
     Handle processTerminationEvent;
@@ -14,3 +14,5 @@ typedef struct Manager {
     u8 cpuTimeBase;
     Handle queuedApplicationProcessHandle;
 } Manager;
+
+extern Manager g_manager;

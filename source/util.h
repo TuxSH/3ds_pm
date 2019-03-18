@@ -23,10 +23,12 @@ static void panic(Result res)
     __builtin_trap();
 }
 
-static inline void assertSuccess(Result res)
+static inline Result assertSuccess(Result res)
 {
     if(R_FAILED(res)) {
         panic(res);
     }
+
+    return res;
 }
 

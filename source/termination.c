@@ -3,6 +3,7 @@
 #include "manager.h"
 #include "util.h"
 #include "exheader_info_heap.h"
+#include "task_runner.h"
 
 static Result terminateUnusedDependencies(const u64 *dependencies, u32 numDeps)
 {
@@ -35,31 +36,53 @@ static Result terminateUnusedDependencies(const u64 *dependencies, u32 numDeps)
     return res;
 }
 
-Result listAndTerminateDependencies(ProcessData *process, ExHeader_Info *exheaderInfo)
+static Result listDependencies(u64 *dependencies, u32 *numDeps, ProcessData *process, ExHeader_Info *exheaderInfo)
 {
-    Result res;
+    Result res = 0;
 
     TRY(LOADER_GetProgramInfo(exheaderInfo, process->programHandle));
 
-    u32 numDeps = 0;
-    u64 dependencies[48];
+    u32 num = 0;
     for (u32 i = 0; i < 48 && exheaderInfo->sci.dependencies[i] != 0; i++) {
         u64 titleId = exheaderInfo->sci.dependencies[i];
         if (IS_N3DS || (titleId & 0xF0000000) == 0) {
             // On O3DS, ignore N3DS titles.
             // Then (on both) remove the N3DS titleId bits
-            dependencies[numDeps++] = titleId & ~0xF0000000;
+            dependencies[num++] = titleId & ~0xF0000000;
         }
     }
 
+    *numDeps = num;
+    return res;
+}
+
+Result listAndTerminateDependencies(ProcessData *process, ExHeader_Info *exheaderInfo)
+{
+    Result res = 0;
+    u64 dependencies[48]; // note: official pm reuses exheaderInfo to save space
+    u32 numDeps = 0;
+
+    TRY(listDependencies(dependencies, &numDeps, process, exheaderInfo));
     return terminateUnusedDependencies(dependencies, numDeps);
 }
 
-void commitPendingTerminations(s64 timeout)
+static Result terminateProcessImpl(ProcessData *process, ExHeader_Info *exheaderInfo)
+{
+    ProcessData_SendTerminationNotification(process);
+    if (process->flags & PROCESSFLAG_DEPENDENCIES_LOADED) {
+        process->flags &= ~PROCESSFLAG_DEPENDENCIES_LOADED;
+        return listAndTerminateDependencies(process, exheaderInfo);
+    } else {
+        return 0;
+    }
+}
+
+static Result commitPendingTerminations(s64 timeout)
 {
     // Wait for processes that have received notification 0x100 to terminate
     // till the timeout, then actually terminate these processes, etc.
 
+    Result res = 0;
     bool atLeastOneListener = false;
     ProcessList_Lock(&g_manager.processList);
 
@@ -70,7 +93,7 @@ void commitPendingTerminations(s64 timeout)
                 atLeastOneListener = true;
                 break;
             case TERMSTATUS_NOTIFICATION_FAILED:
-                assertSuccess(svcTerminateProcess(process->handle));
+                res = svcTerminateProcess(process->handle); // official pm does not panic on failure here
                 break;
             default:
                 break;
@@ -88,7 +111,7 @@ void commitPendingTerminations(s64 timeout)
             ProcessData *process;
             FOREACH_PROCESS(&g_manager.processList, process) {
                 if (process->terminationStatus == TERMSTATUS_NOTIFICATION_SENT) {
-                    assertSuccess(svcTerminateProcess(process->handle));
+                    res = svcTerminateProcess(process->handle);
                 }
             }
 
@@ -96,5 +119,207 @@ void commitPendingTerminations(s64 timeout)
 
             assertSuccess(svcWaitSynchronization(g_manager.processTerminationEvent, timeout));
         }
+    } else {
+        res = 0;
     }
+
+    return res;
+}
+
+static void TerminateProcessOrTitleAsync(void *argdata)
+{
+    struct {
+        u64 id;
+        s64 timeout;
+        bool useTitleId;
+    } *args = argdata;
+
+    ProcessData *process;
+
+    if (args->timeout >= 0) {
+        assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+        g_manager.waitingForTermination = true;
+    }
+
+    ExHeader_Info *exheaderInfo = ExHeaderInfoHeap_New();
+    if (exheaderInfo == NULL) {
+        panic(0);
+    }
+
+    ProcessList_Lock(&g_manager.processList);
+    FOREACH_PROCESS(&g_manager.processList, process) {
+        if ((args->useTitleId && process->titleId == args->id) || process->pid == args->id) {
+            if (process->flags & PROCESSFLAG_NOTIFY_TERMINATION) {
+                process->flags = (process->flags & ~PROCESSFLAG_NOTIFY_TERMINATION) | PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED;
+            }
+            terminateProcessImpl(process, exheaderInfo);
+            if (!args->useTitleId) {
+                break;
+            }
+        }
+    }
+    ProcessList_Unlock(&g_manager.processList);
+
+    ExHeaderInfoHeap_Delete(exheaderInfo);
+
+    if (args->timeout >= 0) {
+        commitPendingTerminations(args->timeout);
+        g_manager.waitingForTermination = false;
+        if (process->flags & PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED) {
+            notifySubscribers(0x110 + process->terminatedNotificationVariation);
+        }
+    }
+}
+
+static Result TerminateProcessOrTitle(u64 id, s64 timeout, bool useTitleId)
+{
+    ProcessData *process;
+
+    if (g_manager.preparingForReboot) {
+        if (timeout != 0) {
+            return 0xC8A05801;
+        }
+
+        ProcessList_Lock(&g_manager.processList);
+        FOREACH_PROCESS(&g_manager.processList, process) {
+            if ((useTitleId && process->titleId == id) || process->pid == id) {
+                assertSuccess(svcTerminateProcess(process->handle));
+                if (!useTitleId) {
+                    break;
+                }
+            }
+        }
+        ProcessList_Unlock(&g_manager.processList);
+
+        return 0;
+    } else {
+        struct {
+            u64 id;
+            s64 timeout;
+            bool useTitleId;
+        } args = { id, timeout, useTitleId };
+
+        TaskRunner_RunTask(TerminateProcessOrTitleAsync, &args, sizeof(args));
+        return 0;
+    }
+}
+
+Result TerminateApplication(s64 timeout)
+{
+    Result res = 0;
+
+    if (g_manager.preparingForReboot) {
+        return 0xC8A05801;
+    }
+
+    ExHeader_Info *exheaderInfo = ExHeaderInfoHeap_New();
+    if (exheaderInfo == NULL) {
+        panic(0);
+    }
+
+    assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+    g_manager.waitingForTermination = true;
+
+    if (g_manager.applicationData != NULL) {
+        terminateProcessImpl(g_manager.applicationData, exheaderInfo);
+    }
+
+    res = commitPendingTerminations(timeout);
+
+    ExHeaderInfoHeap_Delete(exheaderInfo);
+    g_manager.waitingForTermination = false;
+
+    return res;
+}
+
+Result TerminateTitle(u64 titleId, s64 timeout)
+{
+    return TerminateProcessOrTitle(titleId, timeout, true);
+}
+
+Result TerminateProcess(u32 pid, s64 timeout)
+{
+    return TerminateProcessOrTitle(pid, timeout, false);
+}
+
+Handle terminateAllProcesses(u32 callerPid, s64 timeout)
+{
+    u64 dstTimePoint = svcGetSystemTick() + nsToTicks(timeout);
+    ProcessData *process;
+    Handle processHandle = 0;
+
+    u64 dependencies[48];
+    u32 numDeps = 0;
+
+    ExHeader_Info *exheaderInfo = ExHeaderInfoHeap_New();
+
+    if (exheaderInfo == NULL) {
+        panic(0);
+    }
+
+    assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+    g_manager.waitingForTermination = true;
+
+    // List the dependencies of the caller
+    if (callerPid != (u32)-1) {
+        ProcessList_Lock(&g_manager.processList);
+        process = ProcessList_FindProcessById(&g_manager.processList, callerPid);
+        if (process != NULL) {
+            processHandle = process->handle;
+            listDependencies(dependencies, &numDeps, process, exheaderInfo);
+        }
+        ProcessList_Unlock(&g_manager.processList);
+    }
+
+    // Send notification 0x100 to the currently running application
+    if (g_manager.applicationData != NULL) {
+        g_manager.applicationData->flags &= ~PROCESSFLAG_DEPENDENCIES_LOADED;
+        ProcessData_SendTerminationNotification(g_manager.applicationData);
+    }
+
+    // Send notification 0x100 to anything but the caller deps or the caller; and *increase* the refcount of the latter if autoloaded
+    // Ignore KIPs
+    ProcessList_Lock(&g_manager.processList);
+    FOREACH_PROCESS(&g_manager.processList, process) {
+        if (process->flags & PROCESSFLAG_KIP) {
+            continue;
+        } else if (process->pid == callerPid && (process->flags & PROCESSFLAG_AUTOLOADED) != 0) {
+            ++process->refcount;
+            continue;
+        }
+    
+        u32 i;
+        for (i = 0; i < numDeps && dependencies[i] != process->titleId; i++);
+
+        if (i >= numDeps) {
+            // Process not a listed dependency: send notification 0x100
+            ProcessData_SendTerminationNotification(process);
+        } else if (process->flags & PROCESSFLAG_AUTOLOADED){
+            ++process->refcount;
+        }
+    }
+    ProcessList_Unlock(&g_manager.processList);
+    ExHeaderInfoHeap_Delete(exheaderInfo);
+
+    s64 timeoutTicks = dstTimePoint - svcGetSystemTick();
+    commitPendingTerminations(timeoutTicks >= 0 ? ticksToNs(timeoutTicks) : 0LL);
+    g_manager.waitingForTermination = false;
+
+    // Now, send termination notification to PXI (PID 4)
+    assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+    g_manager.waitingForTermination = true;
+
+    ProcessList_Lock(&g_manager.processList);
+    process = ProcessList_FindProcessById(&g_manager.processList, 4);
+    if (process != NULL) {
+        ProcessData_SendTerminationNotification(process);
+    }
+    ProcessList_Unlock(&g_manager.processList);
+
+    // Allow 24 extra seconds for PXI (approx 402167783 ticks)
+    timeoutTicks = dstTimePoint - svcGetSystemTick();
+    commitPendingTerminations(24 * 1000 * 1000 * 1000LL + (timeoutTicks >= 0 ? ticksToNs(timeoutTicks) : 0LL));
+    g_manager.waitingForTermination = false;
+
+    return processHandle;
 }

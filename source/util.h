@@ -42,3 +42,12 @@ static inline Result notifySubscribers(u32 notificationId)
     return res;
 }
 
+static inline s64 nsToTicks(s64 ns)
+{
+    return ns * SYSCLOCK_ARM11 / (1000 * 1000 * 1000LL);
+}
+
+static inline s64 ticksToNs(s64 ticks)
+{
+    return 1000 * 1000 * 1000LL * ticks / SYSCLOCK_ARM11;
+}

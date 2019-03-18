@@ -32,3 +32,13 @@ static inline Result assertSuccess(Result res)
     return res;
 }
 
+static inline Result notifySubscribers(u32 notificationId)
+{
+    Result res = srvPublishToSubscriber(notificationId, 0);
+    if (res == (Result)0xD8606408) {
+        panic(res);
+    }
+
+    return res;
+}
+

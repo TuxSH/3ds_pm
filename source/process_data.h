@@ -19,6 +19,7 @@ typedef enum TerminationStatus {
     TERMSTATUS_RUNNING              = 0,
     TERMSTATUS_NOTIFICATION_SENT    = 1,
     TERMSTATUS_NOTIFICATION_FAILED  = 2,
+    TERMSTATUS_TERMINATED           = 3,
 } TerminationStatus;
 
 typedef struct ProcessData {
@@ -99,28 +100,8 @@ static inline void ProcessList_Delete(ProcessList *list, ProcessData *process)
     IntrusiveList_InsertAfter(list->freeList.first, &process->node);
 }
 
-static inline ProcessData *ProcessList_FindProcessById(const ProcessList *list, u32 pid)
-{
-    ProcessData *process;
+ProcessData *ProcessList_FindProcessById(const ProcessList *list, u32 pid);
+ProcessData *ProcessList_FindProcessByHandle(const ProcessList *list, Handle handle);
 
-    FOREACH_PROCESS(list, process) {
-        if (process->pid == pid) {
-            return process;
-        }
-    }
-
-    return NULL;
-}
-
-static inline ProcessData *ProcessList_FindProcessByHandle(const ProcessList *list, Handle handle)
-{
-    ProcessData *process;
-
-    FOREACH_PROCESS(list, process) {
-        if (process->handle == handle) {
-            return process;
-        }
-    }
-
-    return NULL;
-}
+Result ProcessData_Notify(const ProcessData *process, u32 notificationId);
+Result ProcessData_SendTerminationNotification(ProcessData *process);

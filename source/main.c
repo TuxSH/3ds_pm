@@ -1,6 +1,5 @@
 #include <3ds.h>
 
-#include "util.h"
 #include "manager.h"
 
 // this is called before main

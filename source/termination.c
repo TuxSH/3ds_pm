@@ -242,11 +242,11 @@ Result TerminateProcess(u32 pid, s64 timeout)
     return TerminateProcessOrTitle(pid, timeout, false);
 }
 
-Handle terminateAllProcesses(u32 callerPid, s64 timeout)
+ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
 {
     u64 dstTimePoint = svcGetSystemTick() + nsToTicks(timeout);
     ProcessData *process;
-    Handle processHandle = 0;
+    ProcessData *callerProcess = NULL; // note: official pm returns the caller's handle instead
 
     u64 dependencies[48];
     u32 numDeps = 0;
@@ -265,7 +265,7 @@ Handle terminateAllProcesses(u32 callerPid, s64 timeout)
         ProcessList_Lock(&g_manager.processList);
         process = ProcessList_FindProcessById(&g_manager.processList, callerPid);
         if (process != NULL) {
-            processHandle = process->handle;
+            callerProcess = process;
             listDependencies(dependencies, &numDeps, process, exheaderInfo);
         }
         ProcessList_Unlock(&g_manager.processList);
@@ -287,7 +287,7 @@ Handle terminateAllProcesses(u32 callerPid, s64 timeout)
             ++process->refcount;
             continue;
         }
-    
+
         u32 i;
         for (i = 0; i < numDeps && dependencies[i] != process->titleId; i++);
 
@@ -313,6 +313,8 @@ Handle terminateAllProcesses(u32 callerPid, s64 timeout)
     process = ProcessList_FindProcessById(&g_manager.processList, 4);
     if (process != NULL) {
         ProcessData_SendTerminationNotification(process);
+    } else {
+        panic(0LL);
     }
     ProcessList_Unlock(&g_manager.processList);
 
@@ -321,5 +323,34 @@ Handle terminateAllProcesses(u32 callerPid, s64 timeout)
     commitPendingTerminations(24 * 1000 * 1000 * 1000LL + (timeoutTicks >= 0 ? ticksToNs(timeoutTicks) : 0LL));
     g_manager.waitingForTermination = false;
 
-    return processHandle;
+    return callerProcess;
+}
+
+static void PrepareForRebootAsync(void *argdata)
+{
+    struct {
+        u32 pid;
+        s64 timeout;
+    } *args = argdata;
+
+    ProcessData *caller = terminateAllProcesses(args->pid, args->timeout);
+    if (caller != NULL) {
+        ProcessData_Notify(caller, 0x179);
+    }
+}
+
+Result PrepareForReboot(u32 pid, s64 timeout)
+{
+    struct {
+        u32 pid;
+        s64 timeout;
+    } args = { pid, timeout };
+
+    if (g_manager.preparingForReboot) {
+        return 0xC8A05801;
+    }
+
+    g_manager.preparingForReboot = true;
+    TaskRunner_RunTask(PrepareForRebootAsync, &args, sizeof(args));
+    return 0;
 }

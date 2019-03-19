@@ -1,6 +1,7 @@
 #include <3ds.h>
 #include "reslimit.h"
 #include "util.h"
+#include "manager.h"
 
 typedef s64 ReslimitValues[10];
 
@@ -21,7 +22,7 @@ static ReslimitValues g_o3dsReslimitValues[4] = {
     // APPLICATION
     {
         0x4000000,  // Allocatable memory
-        0x18,       // Max. priority 
+        0x18,       // Max. priority
         32,         // Threads
         32,         // Events
         32,         // Mutexes
@@ -79,7 +80,7 @@ static ReslimitValues g_n3dsReslimitValues[4] = {
     // APPLICATION
     {
         0x7C00000,  // Allocatable memory
-        0x18,       // Max. priority 
+        0x18,       // Max. priority
         32,         // Threads
         32,         // Events
         32,         // Mutexes
@@ -144,7 +145,7 @@ static ReslimitValues *fixupReslimitValues(void)
     u32 defaultMemAmount = !IS_N3DS ? 0x2C00000 : 0x6400000;
     u32 otherMinOvercommitAmount = !IS_N3DS ? 0x280000 : 0x180000;
     u32 baseRegionSize = !IS_N3DS ? 0x1400000 : 0x2000000;
- 
+
     if (sysmemalloc < minAppletMemAmount) {
         values[1][0] = SYSMEMALLOC - minAppletMemAmount / 3;
         values[2][0] = 0;
@@ -161,13 +162,49 @@ static ReslimitValues *fixupReslimitValues(void)
     return values;
 }
 
-Result initializeReslimits(Handle outResLimits[4])
+Result initializeReslimits(void)
 {
     Result res = 0;
     ReslimitValues *values = fixupReslimitValues();
     for (u32 i = 0; i < 4; i++) {
-        TRY(svcCreateResourceLimit(&outResLimits[i]));
-        TRY(svcSetResourceLimitValues(outResLimits[i], g_reslimitInitOrder, values[i], 10));
+        TRY(svcCreateResourceLimit(&g_manager.reslimits[i]));
+        TRY(svcSetResourceLimitValues(g_manager.reslimits[i], g_reslimitInitOrder, values[i], 10));
+    }
+
+    return res;
+}
+
+Result setAppCpuTimeLimit(s64 limit)
+{
+    ResourceLimitType category = RESLIMIT_CPUTIME;
+    return svcSetResourceLimitValues(g_manager.reslimits[0], &category, &limit, 1);
+}
+
+Result getAppCpuTimeLimit(s64 *limit)
+{
+    ResourceLimitType category = RESLIMIT_CPUTIME;
+    return svcGetResourceLimitLimitValues(limit, g_manager.reslimits[0], &category, 1);
+}
+
+Result SetAppResourceLimit(u32 mbz, ResourceLimitType category, u32 value, u64 mbz2)
+{
+    if (mbz != 0 || mbz2 != 0 || category != RESLIMIT_CPUTIME || value <= (u32)g_manager.appCpuTime) {
+        return 0xD8E05BF4;
+    }
+
+    value += value < 5 ? 0 : g_manager.cpuTimeBase;
+    return setAppCpuTimeLimit(value);
+}
+
+Result GetAppResourceLimit(s64 *value, u32 mbz, ResourceLimitType category, u32 mbz2, u64 mbz3)
+{
+    if (mbz != 0 || mbz2 != 0 || mbz3 != 0 || category != RESLIMIT_CPUTIME) {
+        return 0xD8E05BF4;
+    }
+
+    Result res = getAppCpuTimeLimit(value);
+    if (R_SUCCEEDED(res) && *value >= 5) {
+        *value = *value >= g_manager.cpuTimeBase ? *value - g_manager.cpuTimeBase : 0;
     }
 
     return res;

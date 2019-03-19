@@ -11,7 +11,7 @@ typedef struct Manager {
     bool waitingForTermination;
     bool preparingForReboot;
     u8 appCpuTime;
-    u8 cpuTimeBase;
+    s8 cpuTimeBase;
     Handle queuedApplicationProcessHandle;
 } Manager;
 

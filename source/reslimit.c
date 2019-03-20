@@ -234,7 +234,7 @@ void setAppCpuTimeLimitAndSchedModeFromDescriptor(u64 titleId, u16 descriptor)
         g_manager.maxAppCpuTime = cpuTime & 0x7F;
         assertSuccess(svcKernelSetState(6, 3, (cpuTime & 0x80) ? 1LL : 0LL));
     } else {
-        u32 titleUid = ((u32)titleId >> 8) & 0xFFF;
+        u32 titleUid = ((u32)titleId >> 8) & 0xFFFFF;
         g_manager.maxAppCpuTime = 80;
         static const u32 numOverrides = sizeof(g_startCpuTimeOverrides) / sizeof(g_startCpuTimeOverrides[0]);
 

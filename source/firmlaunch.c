@@ -23,7 +23,9 @@ Result SetFirmlaunchParams(const void *params, size_t size)
 {
     size = size >= 0x1000 ? 0x1000 : size;
     memcpy(g_firmlaunchParameters, params, size);
-    memset(g_firmlaunchParameters + size, 0, 0x1000 - size);
+    if (size < 0x1000) {
+        memset(g_firmlaunchParameters + size, 0, 0x1000 - size);
+    }
     return 0;
 }
 

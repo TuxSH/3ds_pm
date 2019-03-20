@@ -130,7 +130,7 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
         u32 count;
         ProcessData *process;
     } dependenciesInfo[48] = {0};
-    u32 numDeps = 0;
+    u32 totalNumDeps, numNewDeps = 0, numDeps = 0;
 
     //u32 offset = 0;
     u64 currentDeps[48]; // note: official PM reuses exheader to save stack space but we have enough of it
@@ -153,13 +153,18 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
         }
     }
 
+    ExHeader_Info *depExheaderInfo = NULL;
+    FS_ProgramInfo depProgramInfo;
+
     if (numDeps == 0) {
         goto add_dup_refs; // official pm forgets to do that
     }
 
     process->flags |= PROCESSFLAG_DEPENDENCIES_LOADED;
-    ExHeader_Info *depExheaderInfo = ExHeaderInfoHeap_New();
-    FS_ProgramInfo depProgramInfo;
+    depExheaderInfo = ExHeaderInfoHeap_New();
+    if (depExheaderInfo = NULL) {
+        panic(0);
+    }
 
     /*
         Official pm does this:
@@ -171,7 +176,7 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
         It also has a buffer overflow bug if the flattened dep tree has more than 48 elements (but this can never happen in practice)
     */
 
-    for (u32 totalNumDeps = 0; numNewDeps != 0; ) {
+    for (totalNumDeps = 0; numNewDeps != 0; ) {
         if (totalNumDeps + numNewDeps > 48) {
             panic(2);
         }
@@ -204,7 +209,7 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
             depProgramInfo.programId = dependenciesInfo[i].titleId;
             depProgramInfo.mediaType = MEDIATYPE_NAND;
 
-            TRYG(launchTitleImpl(NULL, &process, depExheaderInfo, &depProgramInfo, NULL, 0), add_dup_refs);
+            TRYG(launchTitleImpl(NULL, &process, &depProgramInfo, NULL, 0, depExheaderInfo), add_dup_refs);
 
             listDependencies(currentDeps, &numDeps, &process, depExheaderInfo, false);
             process->flags |= PROCESSFLAG_AUTOLOADED | PROCESSFLAG_DEPENDENCIES_LOADED;
@@ -236,5 +241,43 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
         }
     }
 
+    if (depExheaderInfo != NULL) {
+        ExHeaderInfoHeap_Delete(depExheaderInfo);
+    }
+
     return res;
+}
+
+Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
+    const FS_ProgramInfo *programInfoUpdate, u32 launchFlags, const ExHeader_Info *exheaderInfo)
+{
+    if (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) {
+        launchFlags |= PMLAUNCHFLAG_LOAD_DEPENDENCIES;
+    } else {
+        launchFlags &= ~(PMLAUNCHFLAG_USE_UPDATE_TITLE | PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION);
+    }
+
+    Result res = 0;
+    u64 programHandle;
+    StartupInfo si = {0};
+
+    programInfoUpdate = (launchFlags & PMLAUNCHFLAG_USE_UPDATE_TITLE) ? programInfoUpdate : programInfo;
+    TRY(LOADER_RegisterProgram(&programHandle, programInfo->programId, programInfo->mediaType,
+        programInfoUpdate->programId, programInfoUpdate->mediaType));
+
+    res = LOADER_GetProgramInfo(exheaderInfo, programHandle);
+    res = R_SUCCEEDED(res) && exheaderInfo->aci.local_caps.core_info.core_version != SYSCOREVER ? 0xC8A05800 : res;
+
+    if (R_FAILED(res)) {
+        LOADER_UnregisterProgram(programHandle);
+        return res;
+    }
+
+    blacklistServices(exheaderInfo->aci.local_caps.title_id, exheaderInfo->aci.local_caps.service_access);
+
+    if (launchFlags & PMLAUNCHFLAG_LOAD_DEPENDENCIES) {
+        TRY(loadWithDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
+    } else {
+        TRY(loadWithoutDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
+    }
 }

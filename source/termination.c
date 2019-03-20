@@ -1,5 +1,6 @@
 #include <3ds.h>
 #include "termination.h"
+#include "info.h"
 #include "manager.h"
 #include "util.h"
 #include "exheader_info_heap.h"
@@ -36,33 +37,13 @@ static Result terminateUnusedDependencies(const u64 *dependencies, u32 numDeps)
     return res;
 }
 
-static Result listDependencies(u64 *dependencies, u32 *numDeps, ProcessData *process, ExHeader_Info *exheaderInfo)
-{
-    Result res = 0;
-
-    TRY(LOADER_GetProgramInfo(exheaderInfo, process->programHandle));
-
-    u32 num = 0;
-    for (u32 i = 0; i < 48 && exheaderInfo->sci.dependencies[i] != 0; i++) {
-        u64 titleId = exheaderInfo->sci.dependencies[i];
-        if (IS_N3DS || (titleId & 0xF0000000) == 0) {
-            // On O3DS, ignore N3DS titles.
-            // Then (on both) remove the N3DS titleId bits
-            dependencies[num++] = titleId & ~0xF0000000;
-        }
-    }
-
-    *numDeps = num;
-    return res;
-}
-
 Result listAndTerminateDependencies(ProcessData *process, ExHeader_Info *exheaderInfo)
 {
     Result res = 0;
     u64 dependencies[48]; // note: official pm reuses exheaderInfo to save space
     u32 numDeps = 0;
 
-    TRY(listDependencies(dependencies, &numDeps, process, exheaderInfo));
+    TRY(listDependencies(dependencies, &numDeps, process, exheaderInfo, true));
     return terminateUnusedDependencies(dependencies, numDeps);
 }
 
@@ -266,7 +247,7 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
         process = ProcessList_FindProcessById(&g_manager.processList, callerPid);
         if (process != NULL) {
             callerProcess = process;
-            listDependencies(dependencies, &numDeps, process, exheaderInfo);
+            listDependencies(dependencies, &numDeps, process, exheaderInfo, true);
         }
         ProcessList_Unlock(&g_manager.processList);
     }

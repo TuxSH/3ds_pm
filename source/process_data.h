@@ -90,6 +90,7 @@ static inline ProcessData *ProcessList_New(ProcessList *list)
 
     IntrusiveNode *nd = list->freeList.first;
     IntrusiveList_Erase(nd);
+    memset(nd, 0, sizeof(ProcessData));
     IntrusiveList_InsertAfter(list->list.last, nd);
     return (ProcessData *)nd;
 }

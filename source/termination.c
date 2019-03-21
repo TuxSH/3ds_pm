@@ -60,7 +60,7 @@ static Result terminateProcessImpl(ProcessData *process, ExHeader_Info *exheader
 
 static Result commitPendingTerminations(s64 timeout)
 {
-    // Wait for processes that have received notification 0x100 to terminate
+    // Wait for all of the processes that have received notification 0x100 to terminate
     // till the timeout, then actually terminate these processes, etc.
 
     Result res = 0;
@@ -84,7 +84,7 @@ static Result commitPendingTerminations(s64 timeout)
     ProcessList_Unlock(&g_manager.processList);
 
     if (atLeastOneListener) {
-        Result res = assertSuccess(svcWaitSynchronization(g_manager.processTerminationEvent, timeout));
+        Result res = assertSuccess(svcWaitSynchronization(g_manager.allNotifiedTerminationEvent, timeout));
 
         if (R_DESCRIPTION(res) == RD_TIMEOUT) {
             ProcessList_Lock(&g_manager.processList);
@@ -98,7 +98,7 @@ static Result commitPendingTerminations(s64 timeout)
 
             ProcessList_Unlock(&g_manager.processList);
 
-            assertSuccess(svcWaitSynchronization(g_manager.processTerminationEvent, timeout));
+            assertSuccess(svcWaitSynchronization(g_manager.allNotifiedTerminationEvent, timeout));
         }
     } else {
         res = 0;
@@ -119,7 +119,7 @@ static void TerminateProcessOrTitleAsync(void *argdata)
     bool notify = false;
 
     if (args->timeout >= 0) {
-        assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+        assertSuccess(svcClearEvent(g_manager.allNotifiedTerminationEvent));
         g_manager.waitingForTermination = true;
     }
 
@@ -200,7 +200,7 @@ Result TerminateApplication(s64 timeout)
         panic(0);
     }
 
-    assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+    assertSuccess(svcClearEvent(g_manager.allNotifiedTerminationEvent));
     g_manager.waitingForTermination = true;
 
     if (g_manager.runningApplicationData != NULL) {
@@ -240,7 +240,7 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
         panic(0);
     }
 
-    assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+    assertSuccess(svcClearEvent(g_manager.allNotifiedTerminationEvent));
     g_manager.waitingForTermination = true;
 
     // List the dependencies of the caller
@@ -289,7 +289,7 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
     g_manager.waitingForTermination = false;
 
     // Now, send termination notification to PXI (PID 4)
-    assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
+    assertSuccess(svcClearEvent(g_manager.allNotifiedTerminationEvent));
     g_manager.waitingForTermination = true;
 
     ProcessList_Lock(&g_manager.processList);

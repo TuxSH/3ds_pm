@@ -9,7 +9,7 @@ typedef struct Manager {
     ProcessData *debugData; // note: official PM uses runningApplicationData for both, and has queuedApplicationProcessHandle
     Handle reslimits[4];
     Handle newProcessEvent;
-    Handle processTerminationEvent;
+    Handle allNotifiedTerminationEvent;
     bool waitingForTermination;
     bool preparingForReboot;
     u8 maxAppCpuTime;

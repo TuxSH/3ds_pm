@@ -43,7 +43,7 @@ Result listAndTerminateDependencies(ProcessData *process, ExHeader_Info *exheade
     u64 dependencies[48]; // note: official pm reuses exheaderInfo to save space
     u32 numDeps = 0;
 
-    TRY(listDependencies(dependencies, &numDeps, process, exheaderInfo, true));
+    TRY(getAndListDependencies(dependencies, &numDeps, process, exheaderInfo));
     return terminateUnusedDependencies(dependencies, numDeps);
 }
 
@@ -201,8 +201,8 @@ Result TerminateApplication(s64 timeout)
     assertSuccess(svcClearEvent(g_manager.processTerminationEvent));
     g_manager.waitingForTermination = true;
 
-    if (g_manager.applicationData != NULL) {
-        terminateProcessImpl(g_manager.applicationData, exheaderInfo);
+    if (g_manager.runningApplicationData != NULL) {
+        terminateProcessImpl(g_manager.runningApplicationData, exheaderInfo);
     }
 
     res = commitPendingTerminations(timeout);
@@ -247,15 +247,15 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
         process = ProcessList_FindProcessById(&g_manager.processList, callerPid);
         if (process != NULL) {
             callerProcess = process;
-            listDependencies(dependencies, &numDeps, process, exheaderInfo, true);
+            getAndListDependencies(dependencies, &numDeps, process, exheaderInfo);
         }
         ProcessList_Unlock(&g_manager.processList);
     }
 
     // Send notification 0x100 to the currently running application
-    if (g_manager.applicationData != NULL) {
-        g_manager.applicationData->flags &= ~PROCESSFLAG_DEPENDENCIES_LOADED;
-        ProcessData_SendTerminationNotification(g_manager.applicationData);
+    if (g_manager.runningApplicationData != NULL) {
+        g_manager.runningApplicationData->flags &= ~PROCESSFLAG_DEPENDENCIES_LOADED;
+        ProcessData_SendTerminationNotification(g_manager.runningApplicationData);
     }
 
     // Send notification 0x100 to anything but the caller deps or the caller; and *increase* the refcount of the latter if autoloaded

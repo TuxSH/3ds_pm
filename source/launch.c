@@ -48,8 +48,12 @@ static void blacklistServices(u64 titleId, char (*serviceAccessList)[8])
     }
 }
 
+// Note: official PM has two distinct functions for sysmodule vs. regular app. We refactor that into a single function.
+static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
+    const FS_ProgramInfo *programInfoUpdate, u32 launchFlags, ExHeader_Info *exheaderInfo);
+
 // Note: official PM doesn't include svcDebugActiveProcess in this function, but rather in the caller handling dependencies
-static void loadWithoutDependencies(Handle *outDebug, ProcessData **outProcessData, u64 programHandle, const FS_ProgramInfo *programInfo,
+static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcessData, u64 programHandle, const FS_ProgramInfo *programInfo,
     u32 launchFlags, const ExHeader_Info *exheaderInfo)
 {
     Result res = 0;
@@ -86,20 +90,24 @@ static void loadWithoutDependencies(Handle *outDebug, ProcessData **outProcessDa
     u32 serviceCount;
     for(serviceCount = 1; serviceCount <= 34 && *(u64 *)localcaps->service_access[serviceCount - 1] != 0; serviceCount++);
 
-    TRYG(FSREG_Register(pid, programHandle, programInfo, localcaps->storage_info), cleanup);
+    TRYG(FSREG_Register(pid, programHandle, programInfo, &localcaps->storage_info), cleanup);
     TRYG(SRVPM_RegisterProcess(pid, serviceCount, localcaps->service_access), cleanup);
 
     if (localcaps->reslimit_category <= RESLIMIT_CATEGORY_OTHER) {
-        TRYG(svcSetProcessResourceLimits(processHandle, g_manager[localcaps->reslimit_category]), cleanup);
+        TRYG(svcSetProcessResourceLimits(processHandle, g_manager.reslimits[localcaps->reslimit_category]), cleanup);
     }
 
     // Yes, even numberOfCores=2 on N3DS. On the 3DS, the affinity mask doesn't play the role of an access limiter,
     // it's only useful for cpuId < 0. thread->affinityMask = process->affinityMask | (cpuId >= 0 ? 1 << cpuId : 0)
     u8 affinityMask = localcaps->core_info.affinity_mask;
-    TRYG(svcSetProcessAffinityMask(process, &affinityMask, 2), cleanup);
+    TRYG(svcSetProcessAffinityMask(processHandle, &affinityMask, 2), cleanup);
     TRYG(svcSetProcessIdealProcessor(processHandle, localcaps->core_info.ideal_processor), cleanup);
 
     setAppCpuTimeLimitAndSchedModeFromDescriptor(localcaps->title_id, localcaps->reslimits[0]);
+
+    if (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) {
+        (*outProcessData)->flags |= PROCESSFLAG_NORMAL_APPLICATION; // not in official PM
+    }
 
     if (launchFlags & PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION) {
         TRYG(svcDebugActiveProcess(outDebug, pid), cleanup);
@@ -111,8 +119,6 @@ static void loadWithoutDependencies(Handle *outDebug, ProcessData **outProcessDa
         return res;
     }
 
-    process->flags = (launchFlags & PMLAUNCHFLAG_NOTIFY_TERMINATION) ? PROCESSFLAG_NOTIFY_TERMINATION : 0;
-
     if (outProcessData != NULL) {
         *outProcessData = process;
     }
@@ -120,7 +126,7 @@ static void loadWithoutDependencies(Handle *outDebug, ProcessData **outProcessDa
     return res;
 }
 
-static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData, u64 programHandle, const FS_ProgramInfo *programInfo,
+static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessData, u64 programHandle, const FS_ProgramInfo *programInfo,
     u32 launchFlags, const ExHeader_Info *exheaderInfo)
 {
     Result res = 0;
@@ -130,17 +136,15 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
         u32 count;
         ProcessData *process;
     } dependenciesInfo[48] = {0};
-    u32 totalNumDeps, numNewDeps = 0, numDeps = 0;
+    u32 totalNumDeps = 0, numNewDeps = 0, numDeps = 0;
 
-    //u32 offset = 0;
     u64 currentDeps[48]; // note: official PM reuses exheader to save stack space but we have enough of it
 
-    Result res = 0;
     TRY(loadWithoutDependencies(outDebug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
     ProcessData *process = *outProcessData;
 
 
-    listDependencies(currentDeps, &numDeps, process, exheaderInfo, false);
+    listDependencies(currentDeps, &numDeps, exheaderInfo);
     for (u32 i = 0; i < numDeps; i++) {
         // Filter duplicate results
         u32 j;
@@ -162,7 +166,7 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
 
     process->flags |= PROCESSFLAG_DEPENDENCIES_LOADED;
     depExheaderInfo = ExHeaderInfoHeap_New();
-    if (depExheaderInfo = NULL) {
+    if (depExheaderInfo == NULL) {
         panic(0);
     }
 
@@ -185,11 +189,11 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
         ProcessList_Lock(&g_manager.processList);
         for (u32 i = 0; i < numNewDeps; i++) {
             FOREACH_PROCESS(&g_manager.processList, process) {
-                if (process->titleId & ~0xFF == dependenciesInfo[totalNumDeps + i] & ~0xFF) {
+                if ((process->titleId & ~0xFF) == (dependenciesInfo[totalNumDeps + i].titleId & ~0xFF)) {
                     // Note: two processes can't have the same normalized titleId
                     dependenciesInfo[totalNumDeps + i].process = process;
                     if (process->flags & PROCESSFLAG_AUTOLOADED) {
-                        if (process->refcount = 0xFF) {
+                        if (process->refcount == 0xFF) {
                             panic(3);
                         }
                         ++process->refcount;
@@ -211,7 +215,7 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
 
             TRYG(launchTitleImpl(NULL, &process, &depProgramInfo, NULL, 0, depExheaderInfo), add_dup_refs);
 
-            listDependencies(currentDeps, &numDeps, &process, depExheaderInfo, false);
+            listDependencies(currentDeps, &numDeps, depExheaderInfo);
             process->flags |= PROCESSFLAG_AUTOLOADED | PROCESSFLAG_DEPENDENCIES_LOADED;
 
             for (u32 i = 0; i < numDeps; i++) {
@@ -248,8 +252,9 @@ static void loadWithDependencies(Handle *outDebug, ProcessData **outProcessData,
     return res;
 }
 
-Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
-    const FS_ProgramInfo *programInfoUpdate, u32 launchFlags, const ExHeader_Info *exheaderInfo)
+// Note: official PM has two distinct functions for sysmodule vs. regular app. We refactor that into a single function.
+static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
+    const FS_ProgramInfo *programInfoUpdate, u32 launchFlags, ExHeader_Info *exheaderInfo)
 {
     if (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) {
         launchFlags |= PMLAUNCHFLAG_LOAD_DEPENDENCIES;
@@ -266,7 +271,7 @@ Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_Pro
         programInfoUpdate->programId, programInfoUpdate->mediaType));
 
     res = LOADER_GetProgramInfo(exheaderInfo, programHandle);
-    res = R_SUCCEEDED(res) && exheaderInfo->aci.local_caps.core_info.core_version != SYSCOREVER ? 0xC8A05800 : res;
+    res = R_SUCCEEDED(res) && exheaderInfo->aci.local_caps.core_info.core_version != SYSCOREVER ? (Result)0xC8A05800 : res;
 
     if (R_FAILED(res)) {
         LOADER_UnregisterProgram(programHandle);
@@ -277,7 +282,232 @@ Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_Pro
 
     if (launchFlags & PMLAUNCHFLAG_LOAD_DEPENDENCIES) {
         TRY(loadWithDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
+        // note: official pm doesn't terminate the process if this fails (dependency loading)...
+        // This may be intentional, but I believe this is a bug since the 0xD8A05805 and svcRun failure codepaths terminate the process...
+        // It also forgets to clear PROCESSFLAG_NOTIFY_TERMINATION in the process...
     } else {
         TRY(loadWithoutDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
+        // note: official pm doesn't terminate the proc. if it fails here either, but will because of the svcCloseHandle and the svcRun codepath
     }
+
+    ProcessData *process = *outProcessData;
+    if (launchFlags & PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION) {
+        // saved field is different in official pm
+        // this also means official pm can't launch a title with a debug flag and an application
+        if (g_manager.debugData == NULL) {
+            g_manager.debugData = process;
+        } else {
+            res = 0xD8A05805;
+        }
+    } else {
+        si.priority = exheaderInfo->aci.local_caps.core_info.priority;
+        si.stack_size = exheaderInfo->sci.codeset_info.stack_size;
+        res = svcRun(process->handle, &si);
+        if (R_SUCCEEDED(res) && (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) != 0) {
+            g_manager.runningApplicationData = process;
+            notifySubscribers(0x10C);
+        }
+    }
+
+    if (R_FAILED(res)) {
+        svcTerminateProcess(process->handle);
+    } else {
+        // official PM sets it but forgets to clear it on failure...
+        process->flags = (launchFlags & PMLAUNCHFLAG_NOTIFY_TERMINATION) ? PROCESSFLAG_NOTIFY_TERMINATION : 0;
+    }
+
+    return res;
+}
+
+static Result launchTitleImplWrapper(Handle *outDebug, u32 *outPid, const FS_ProgramInfo *programInfo, const FS_ProgramInfo *programInfoUpdate, u32 launchFlags)
+{
+    ExHeader_Info *exheaderInfo = ExHeaderInfoHeap_New();
+    if (exheaderInfo == NULL) {
+        panic(0);
+    }
+
+    ProcessData *process;
+    Result res = launchTitleImpl(outDebug, &process, programInfo, programInfoUpdate, launchFlags, exheaderInfo);
+
+    if (outPid != NULL) {
+        *outPid = process->pid;
+    }
+
+    ExHeaderInfoHeap_Delete(exheaderInfo);
+
+    return res;
+}
+
+static void LaunchTitleAsync(void *argdata)
+{
+    struct {
+        FS_ProgramInfo programInfo, programInfoUpdate;
+        u32 launchFlags;
+    } *args = argdata;
+
+    launchTitleImplWrapper(NULL, NULL, &args->programInfo, &args->programInfoUpdate, args->launchFlags);
+}
+
+Result LaunchTitle(u32 *outPid, const FS_ProgramInfo *programInfo, u32 launchFlags)
+{
+    ProcessData *process, *foundProcess = NULL;
+
+    launchFlags &= ~PMLAUNCHFLAG_USE_UPDATE_TITLE;
+
+    if (g_manager.preparingForReboot) {
+        return 0xC8A05801;
+    }
+
+    u32 tidh = (u32)(programInfo->programId >> 32);
+    u32 tidl = (u32)programInfo->programId;
+    if ((tidh == 0x00040030 || tidh == 0x00040130) && (tidl & 0xFF) != SYSCOREVER) {
+        // Panic if launching SAFE_MODE sysmodules or applets (note: exheader syscorever check above only done for applications in official PM)
+        // Official PM also hardcodes SYSCOREVER = 2 here.
+        panic(4);
+    }
+
+    if ((g_manager.runningApplicationData != NULL || g_manager.debugData != NULL) && (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) != 0) {
+        return 0xC8A05BF0;
+    }
+
+    ProcessList_Lock(&g_manager.processList);
+    FOREACH_PROCESS(&g_manager.processList, process) {
+        if ((process->titleId & ~0xFF) == (programInfo->programId & ~0xFF)) {
+            foundProcess = process;
+            break;
+        }
+    }
+    ProcessList_Unlock(&g_manager.processList);
+
+    if (foundProcess != NULL) {
+        foundProcess->flags &= ~PROCESSFLAG_AUTOLOADED;
+        if (outPid != NULL) {
+            *outPid = foundProcess->pid;
+        }
+        return 0;
+    } else {
+        if (launchFlags & PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION || !(launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION)) {
+            return launchTitleImplWrapper(NULL, outPid, programInfo, programInfo, launchFlags);
+        } else {
+            struct {
+                FS_ProgramInfo programInfo, programInfoUpdate;
+                u32 launchFlags;
+            } args = { *programInfo, *programInfo, launchFlags };
+
+            if (outPid != NULL) {
+                *outPid = (u32)-1; // PM doesn't do that lol
+            }
+            TaskRunner_RunTask(LaunchTitleAsync, &args, sizeof(args));
+            return 0;
+        }
+    }
+}
+
+Result LaunchTitleUpdate(const FS_ProgramInfo *programInfo, const FS_ProgramInfo *programInfoUpdate, u32 launchFlags)
+{
+    if (g_manager.preparingForReboot) {
+        return 0xC8A05801;
+    }
+    if (g_manager.runningApplicationData != NULL || g_manager.debugData != NULL) {
+        return 0xC8A05BF0;
+    }
+    if (!(launchFlags & ~PMLAUNCHFLAG_NORMAL_APPLICATION)) {
+        return 0xD8E05802;
+    }
+
+    launchFlags |= PMLAUNCHFLAG_USE_UPDATE_TITLE;
+
+    if (launchFlags & PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION) {
+        return launchTitleImplWrapper(NULL, NULL, programInfo, programInfoUpdate, launchFlags);
+    } else {
+        struct {
+            FS_ProgramInfo programInfo, programInfoUpdate;
+            u32 launchFlags;
+        } args = { *programInfo, *programInfoUpdate, launchFlags };
+
+        TaskRunner_RunTask(LaunchTitleAsync, &args, sizeof(args));
+        return 0;
+    }
+}
+
+Result LaunchApp(const FS_ProgramInfo *programInfo, u32 launchFlags)
+{
+    if (g_manager.runningApplicationData != NULL || g_manager.debugData != NULL) {
+        return 0xC8A05BF0;
+    }
+
+    assertSuccess(setAppCpuTimeLimit(0));
+    return LaunchTitle(NULL, programInfo, launchFlags | PMLAUNCHFLAG_LOAD_DEPENDENCIES | PMLAUNCHFLAG_NORMAL_APPLICATION);
+}
+
+Result RunQueuedProcess(Handle *outDebug)
+{
+    Result res = 0;
+    StartupInfo si = {0};
+
+    if (g_manager.debugData == NULL) {
+        return 0xD8A05804;
+    } else if ((g_manager.debugData->flags & PROCESSFLAG_NORMAL_APPLICATION) && g_manager.runningApplicationData != NULL) {
+        // Not in official PM
+        return 0xC8A05BF0;
+    }
+
+    ProcessData *process = g_manager.debugData;
+    g_manager.debugData = NULL;
+
+    ExHeader_Info *exheaderInfo = ExHeaderInfoHeap_New();
+    if (exheaderInfo == NULL) {
+        panic(0);
+    }
+
+    TRYG(LOADER_GetProgramInfo(exheaderInfo, process->programHandle), cleanup);
+    TRYG(svcDebugActiveProcess(outDebug, process->pid), cleanup);
+
+    si.priority = exheaderInfo->aci.local_caps.core_info.priority;
+    si.stack_size = exheaderInfo->sci.codeset_info.stack_size;
+    res = svcRun(process->handle, &si);
+    if (R_SUCCEEDED(res) && process->flags & PROCESSFLAG_NORMAL_APPLICATION) {
+        // Second operand not in official PM
+        g_manager.runningApplicationData = process;
+        notifySubscribers(0x10C);
+    }
+
+    cleanup:
+    if (R_FAILED(res)) {
+        process->flags &= ~PROCESSFLAG_NOTIFY_TERMINATION;
+        svcTerminateProcess(process->handle);
+    }
+
+    ExHeaderInfoHeap_Delete(exheaderInfo);
+
+    return res;
+}
+
+Result LaunchAppDebug(Handle *outDebug, const FS_ProgramInfo *programInfo, u32 launchFlags)
+{
+    if (g_manager.debugData != NULL) {
+        return RunQueuedProcess(outDebug);
+    }
+
+    if (g_manager.runningApplicationData != NULL) {
+        return 0xC8A05BF0;
+    }
+
+    assertSuccess(setAppCpuTimeLimit(0));
+    return launchTitleImplWrapper(outDebug, NULL, programInfo, programInfo,
+        (launchFlags & ~PMLAUNCHFLAG_USE_UPDATE_TITLE) | PMLAUNCHFLAG_NORMAL_APPLICATION);
+}
+
+Result autolaunchSysmodules(void)
+{
+    Result res = 0;
+    FS_ProgramInfo programInfo = { .mediaType = MEDIATYPE_NAND };
+
+    // Launch NS
+    if (NSTID != 0) {
+        programInfo.programId = NSTID;
+        TRY(launchTitleImplWrapper(NULL, NULL, &programInfo, &programInfo, PMLAUNCHFLAG_LOAD_DEPENDENCIES));
+    }
+
+    return res;
 }

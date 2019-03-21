@@ -1,4 +1,5 @@
 #include <3ds.h>
+#include <string.h>
 #include "process_data.h"
 #include "util.h"
 
@@ -43,4 +44,23 @@ Result ProcessData_SendTerminationNotification(ProcessData *process)
     Result res = ProcessData_Notify(process, 0x100);
     process->terminationStatus = R_SUCCEEDED(res) ? TERMSTATUS_NOTIFICATION_SENT : TERMSTATUS_NOTIFICATION_FAILED;
     return res;
+}
+
+ProcessData *ProcessList_New(ProcessList *list)
+{
+    if (IntrusiveList_TestEnd(&list->freeList, list->freeList.first)) {
+        return NULL;
+    }
+
+    IntrusiveNode *nd = list->freeList.first;
+    IntrusiveList_Erase(nd);
+    memset(nd, 0, sizeof(ProcessData));
+    IntrusiveList_InsertAfter(list->list.last, nd);
+    return (ProcessData *)nd;
+}
+
+void ProcessList_Delete(ProcessList *list, ProcessData *process)
+{
+    IntrusiveList_Erase(&process->node);
+    IntrusiveList_InsertAfter(list->freeList.first, &process->node);
 }

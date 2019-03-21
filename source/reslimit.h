@@ -3,6 +3,7 @@
 #include <3ds/svc.h>
 
 Result initializeReslimits(void);
+Result setAppCpuTimeLimit(s64 limit);
 void setAppCpuTimeLimitAndSchedModeFromDescriptor(u64 titleId, u16 descriptor);
 
 Result SetAppResourceLimit(u32 mbz, ResourceLimitType category, u32 value, u64 mbz2);

@@ -3,13 +3,16 @@
 #include "info.h"
 #include "util.h"
 
-Result listDependencies(u64 *dependencies, u32 *numDeps, ProcessData *process, ExHeader_Info *exheaderInfo, bool useLoader)
+Result getAndListDependencies(u64 *dependencies, u32 *numDeps, ProcessData *process, ExHeader_Info *exheaderInfo)
 {
     Result res = 0;
+    TRY(LOADER_GetProgramInfo(exheaderInfo, process->programHandle));
+    return listDependencies(dependencies, numDeps, exheaderInfo);
+}
 
-    if (useLoader) {
-        TRY(LOADER_GetProgramInfo(exheaderInfo, process->programHandle));
-    }
+Result listDependencies(u64 *dependencies, u32 *numDeps, const ExHeader_Info *exheaderInfo)
+{
+    Result res = 0;
 
     u32 num = 0;
     for (u32 i = 0; i < 48 && exheaderInfo->sci.dependencies[i] != 0; i++) {

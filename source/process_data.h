@@ -13,6 +13,7 @@ enum {
     PROCESSFLAG_DEPENDENCIES_LOADED             = BIT(2),
     PROCESSFLAG_AUTOLOADED                      = BIT(3),
     PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED   = BIT(4),
+    PROCESSFLAG_NORMAL_APPLICATION              = BIT(5), // Official PM doesn't have this
 };
 
 typedef enum TerminationStatus {
@@ -82,24 +83,8 @@ static inline bool ProcessList_TestEnd(const ProcessList *list, const ProcessDat
     return IntrusiveList_TestEnd(&list->list, &process->node);
 }
 
-static inline ProcessData *ProcessList_New(ProcessList *list)
-{
-    if (IntrusiveList_TestEnd(&list->freeList, list->freeList.first)) {
-        return NULL;
-    }
-
-    IntrusiveNode *nd = list->freeList.first;
-    IntrusiveList_Erase(nd);
-    memset(nd, 0, sizeof(ProcessData));
-    IntrusiveList_InsertAfter(list->list.last, nd);
-    return (ProcessData *)nd;
-}
-
-static inline void ProcessList_Delete(ProcessList *list, ProcessData *process)
-{
-    IntrusiveList_Erase(&process->node);
-    IntrusiveList_InsertAfter(list->freeList.first, &process->node);
-}
+ProcessData *ProcessList_New(ProcessList *list);
+void ProcessList_Delete(ProcessList *list, ProcessData *process);
 
 ProcessData *ProcessList_FindProcessById(const ProcessList *list, u32 pid);
 ProcessData *ProcessList_FindProcessByHandle(const ProcessList *list, Handle handle);

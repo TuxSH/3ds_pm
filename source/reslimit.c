@@ -198,7 +198,7 @@ Result initializeReslimits(void)
     return res;
 }
 
-static Result setAppCpuTimeLimit(s64 limit)
+Result setAppCpuTimeLimit(s64 limit)
 {
     ResourceLimitType category = RESLIMIT_CPUTIME;
     return svcSetResourceLimitValues(g_manager.reslimits[0], &category, &limit, 1);

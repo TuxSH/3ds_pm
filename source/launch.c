@@ -62,6 +62,10 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
     ProcessData *process;
     const ExHeader_Arm11SystemLocalCapabilities *localcaps = &exheaderInfo->aci.local_caps;
 
+    if (outProcessData != NULL) {
+        *outProcessData = NULL;
+    }
+
     if (programInfo->programId & (1ULL << 35)) {
         // RequireBatchUpdate?
         return 0xD8E05803;
@@ -281,12 +285,12 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
     blacklistServices(exheaderInfo->aci.local_caps.title_id, exheaderInfo->aci.local_caps.service_access);
 
     if (launchFlags & PMLAUNCHFLAG_LOAD_DEPENDENCIES) {
-        TRY(loadWithDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
+        TRYG(loadWithDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo), cleanup);
         // note: official pm doesn't terminate the process if this fails (dependency loading)...
         // This may be intentional, but I believe this is a bug since the 0xD8A05805 and svcRun failure codepaths terminate the process...
         // It also forgets to clear PROCESSFLAG_NOTIFY_TERMINATION in the process...
     } else {
-        TRY(loadWithoutDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
+        TRYG(loadWithoutDependencies(debug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo), cleanup);
         // note: official pm doesn't terminate the proc. if it fails here either, but will because of the svcCloseHandle and the svcRun codepath
     }
 
@@ -309,9 +313,11 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
         }
     }
 
-    if (R_FAILED(res)) {
+    cleanup:
+    process = *outProcessData;
+    if (process != NULL && R_FAILED(res)) {
         svcTerminateProcess(process->handle);
-    } else {
+    } else if (process != NULL) {
         // official PM sets it but forgets to clear it on failure...
         process->flags = (launchFlags & PMLAUNCHFLAG_NOTIFY_TERMINATION) ? PROCESSFLAG_NOTIFY_TERMINATION : 0;
     }

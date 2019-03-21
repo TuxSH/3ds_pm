@@ -1,5 +1,7 @@
 #include <3ds.h>
 #include <string.h>
+#include "exheader_info_heap.h"
+#include "manager.h"
 #include "info.h"
 #include "util.h"
 
@@ -25,5 +27,37 @@ Result listDependencies(u64 *dependencies, u32 *numDeps, const ExHeader_Info *ex
     }
 
     *numDeps = num;
+    return res;
+}
+
+Result GetTitleExHeaderFlags(ExHeader_Arm11CoreInfo *outCoreInfo, ExHeader_SystemInfoFlags *outSiFlags, const FS_ProgramInfo *programInfo)
+{
+    Result res = 0;
+    u64 programHandle = 0;
+
+    if (g_manager.preparingForReboot) {
+        return 0xC8A05801;
+    }
+
+    ExHeader_Info *exheaderInfo = ExHeaderInfoHeap_New();
+    if (exheaderInfo == NULL) {
+        panic(0);
+    }
+
+    res = LOADER_RegisterProgram(&programHandle, programInfo->programId, programInfo->mediaType,
+    programInfo->programId, programInfo->mediaType);
+
+    if (R_SUCCEEDED(res))
+    {
+        res = LOADER_GetProgramInfo(exheaderInfo, programHandle);
+        if (R_SUCCEEDED(res)) {
+            *outCoreInfo = exheaderInfo->aci.local_caps.core_info;
+            *outSiFlags = exheaderInfo->sci.codeset_info.flags;
+        }
+        LOADER_UnregisterProgram(programHandle);
+    }
+
+    ExHeaderInfoHeap_Delete(exheaderInfo);
+
     return res;
 }

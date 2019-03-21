@@ -1,4 +1,5 @@
 #include <3ds.h>
+#include <string.h>
 #include "manager.h"
 #include "reslimit.h"
 #include "util.h"

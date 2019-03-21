@@ -17,3 +17,5 @@ typedef struct Manager {
 } Manager;
 
 extern Manager g_manager;
+
+Result UnregisterProcess(u64 titleId);

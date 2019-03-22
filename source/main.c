@@ -18,7 +18,13 @@ static MyThread processMonitorThread, taskRunnerThread;
 // this is called before main
 void __appInit()
 {
-    srvPmInit();
+    // Wait for sm
+    for(Result res = 0xD88007FA; res == (Result)0xD88007FA; svcSleepThread(500 * 1000LL)) {
+        res = srvPmInit();
+        if(R_FAILED(res) && res != (Result)0xD88007FA)
+            panic(res);
+    }
+
     loaderInit();
     fsRegInit();
 

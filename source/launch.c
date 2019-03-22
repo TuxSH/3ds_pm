@@ -194,7 +194,7 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
         ProcessList_Lock(&g_manager.processList);
         for (u32 i = 0; i < numNewDeps; i++) {
             FOREACH_PROCESS(&g_manager.processList, process) {
-                if ((process->titleId & ~0xFF) == (dependenciesInfo[totalNumDeps + i].titleId & ~0xFF)) {
+                if ((process->titleId & ~0xFFULL) == (dependenciesInfo[totalNumDeps + i].titleId & ~0xFFULL)) {
                     // Note: two processes can't have the same normalized titleId
                     dependenciesInfo[totalNumDeps + i].process = process;
                     if (process->flags & PROCESSFLAG_AUTOLOADED) {
@@ -210,6 +210,7 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
 
         // Launch the newly needed sysmodules, handle dependencies here and not in the function call to avoid infinite recursion
         u32 currentNumNewDeps = numNewDeps;
+        numNewDeps = 0;
         for (u32 i = 0; i < currentNumNewDeps; i++) {
             if (dependenciesInfo[totalNumDeps + i].process != NULL) {
                 continue;
@@ -379,7 +380,7 @@ Result LaunchTitle(u32 *outPid, const FS_ProgramInfo *programInfo, u32 launchFla
 
     ProcessList_Lock(&g_manager.processList);
     FOREACH_PROCESS(&g_manager.processList, process) {
-        if ((process->titleId & ~0xFF) == (programInfo->programId & ~0xFF)) {
+        if ((process->titleId & ~0xFFULL) == (programInfo->programId & ~0xFFULL)) {
             foundProcess = process;
             break;
         }

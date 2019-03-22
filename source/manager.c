@@ -49,7 +49,7 @@ Result UnregisterProcess(u64 titleId)
     ProcessList_Lock(&g_manager.processList);
 
     FOREACH_PROCESS(&g_manager.processList, process) {
-        if ((process->titleId & ~0xFF) == (titleId & ~0xFF)) {
+        if ((process->titleId & ~0xFFULL) == (titleId & ~0xFFULL)) {
             foundProcess = process;
             break;
         }

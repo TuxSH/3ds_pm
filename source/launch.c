@@ -85,6 +85,7 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
         panic(1);
     }
 
+    process->handle = processHandle;
     process->pid = pid;
     process->programHandle = programHandle;
     process->refcount = 1;

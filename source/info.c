@@ -19,10 +19,10 @@ Result listDependencies(u64 *dependencies, u32 *numDeps, const ExHeader_Info *ex
     u32 num = 0;
     for (u32 i = 0; i < 48 && exheaderInfo->sci.dependencies[i] != 0; i++) {
         u64 titleId = exheaderInfo->sci.dependencies[i];
-        if (IS_N3DS || (titleId & 0xF0000000) == 0) {
+        if (IS_N3DS || (titleId & 0xF0000000ULL) == 0) {
             // On O3DS, ignore N3DS titles.
             // Then (on both) remove the N3DS titleId bits
-            dependencies[num++] = titleId & ~0xF0000000;
+            dependencies[num++] = titleId & ~0xF0000000ULL;
         }
     }
 

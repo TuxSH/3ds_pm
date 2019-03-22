@@ -12,6 +12,7 @@ static Node *g_headNode = NULL;
 void ExHeaderInfoHeap_Init(void *buf, size_t num)
 {
     Node *node = (Node *)buf;
+    g_headNode = node;
     for (size_t i = 0; i < num; i++) {
         node->next = &node[1];
         node = node->next;

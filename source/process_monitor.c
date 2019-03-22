@@ -56,7 +56,7 @@ void processMonitor(void *p)
         FOREACH_PROCESS(&g_manager.processList, process) {
             // Rebuild the handle array
             if (process->terminationStatus != TERMSTATUS_TERMINATED) {
-                handles[numProcesses++] = process->handle;
+                handles[1 + numProcesses++] = process->handle;
                 if (process->terminationStatus == TERMSTATUS_NOTIFICATION_SENT) {
                     atLeastOneTerminating = true;
                 }

@@ -76,7 +76,7 @@ void initSystem()
 
 static const ServiceManagerServiceEntry services[] = {
     { "pm:app",  3, pmAppHandleCommands,  false },
-    { "pm:dbg",  2, pmDbgHandleCommands, false },
+    { "pm:dbg",  2, pmDbgHandleCommands,  false },
     { NULL },
 };
 
@@ -86,8 +86,9 @@ static const ServiceManagerNotificationEntry notifications[] = {
 
 int main(void)
 {
-    if (R_FAILED(ServiceManager_Run(services, notifications, NULL))) {
-        panic(999);
+    Result res = 0;
+    if (R_FAILED(res = ServiceManager_Run(services, notifications, NULL))) {
+        panic(res);
     }
     return 0;
 }

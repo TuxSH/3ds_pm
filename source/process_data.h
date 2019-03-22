@@ -87,7 +87,9 @@ ProcessData *ProcessList_New(ProcessList *list);
 void ProcessList_Delete(ProcessList *list, ProcessData *process);
 
 ProcessData *ProcessList_FindProcessById(const ProcessList *list, u32 pid);
+ProcessData *ProcessList_FindProcessByTitleId(const ProcessList *list, u64 titleId);
 ProcessData *ProcessList_FindProcessByHandle(const ProcessList *list, Handle handle);
 
+void ProcessData_Incref(ProcessData *process, u32 amount);
 Result ProcessData_Notify(const ProcessData *process, u32 notificationId);
 Result ProcessData_SendTerminationNotification(ProcessData *process);

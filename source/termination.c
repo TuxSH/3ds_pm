@@ -267,7 +267,7 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
         if (process->flags & PROCESSFLAG_KIP) {
             continue;
         } else if (process->pid == callerPid && (process->flags & PROCESSFLAG_AUTOLOADED) != 0) {
-            ++process->refcount;
+            ProcessData_Incref(process, 1);
             continue;
         }
 
@@ -278,7 +278,7 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
             // Process not a listed dependency: send notification 0x100
             ProcessData_SendTerminationNotification(process);
         } else if (process->flags & PROCESSFLAG_AUTOLOADED){
-            ++process->refcount;
+            ProcessData_Incref(process, 1);
         }
     }
     ProcessList_Unlock(&g_manager.processList);

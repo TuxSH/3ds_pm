@@ -92,21 +92,25 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
     ProcessList_Unlock(&g_manager.processList);
     svcSignalEvent(g_manager.newProcessEvent);
 
+    if (outProcessData != NULL) {
+        *outProcessData = process;
+    }
+
     u32 serviceCount;
     for(serviceCount = 1; serviceCount <= 34 && *(u64 *)localcaps->service_access[serviceCount - 1] != 0; serviceCount++);
 
-    TRYG(FSREG_Register(pid, programHandle, programInfo, &localcaps->storage_info), cleanup);
-    TRYG(SRVPM_RegisterProcess(pid, serviceCount, localcaps->service_access), cleanup);
+    TRY(FSREG_Register(pid, programHandle, programInfo, &localcaps->storage_info));
+    TRY(SRVPM_RegisterProcess(pid, serviceCount, localcaps->service_access));
 
     if (localcaps->reslimit_category <= RESLIMIT_CATEGORY_OTHER) {
-        TRYG(svcSetProcessResourceLimits(processHandle, g_manager.reslimits[localcaps->reslimit_category]), cleanup);
+        TRY(svcSetProcessResourceLimits(processHandle, g_manager.reslimits[localcaps->reslimit_category]));
     }
 
     // Yes, even numberOfCores=2 on N3DS. On the 3DS, the affinity mask doesn't play the role of an access limiter,
     // it's only useful for cpuId < 0. thread->affinityMask = process->affinityMask | (cpuId >= 0 ? 1 << cpuId : 0)
     u8 affinityMask = localcaps->core_info.affinity_mask;
-    TRYG(svcSetProcessAffinityMask(processHandle, &affinityMask, 2), cleanup);
-    TRYG(svcSetProcessIdealProcessor(processHandle, localcaps->core_info.ideal_processor), cleanup);
+    TRY(svcSetProcessAffinityMask(processHandle, &affinityMask, 2));
+    TRY(svcSetProcessIdealProcessor(processHandle, localcaps->core_info.ideal_processor));
 
     setAppCpuTimeLimitAndSchedModeFromDescriptor(localcaps->title_id, localcaps->reslimits[0]);
 
@@ -115,17 +119,7 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
     }
 
     if (launchFlags & PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION) {
-        TRYG(svcDebugActiveProcess(outDebug, pid), cleanup);
-    }
-
-    cleanup:
-    if (R_FAILED(res)) {
-        svcTerminateProcess(processHandle); // missing in official pm in all code paths but one
-        return res;
-    }
-
-    if (outProcessData != NULL) {
-        *outProcessData = process;
+        TRY(svcDebugActiveProcess(outDebug, pid));
     }
 
     return res;
@@ -136,43 +130,33 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
 {
     Result res = 0;
 
-    struct {
-        u64 titleId;
-        u32 count;
-        ProcessData *process;
-    } dependenciesInfo[48] = {0};
-    u32 totalNumDeps = 0, numNewDeps = 0, numDeps = 0;
+    u64 dependencies[48];
+    u32 remrefcounts[48] = {0};
+    ProcessData *depProcs[48];
+    u32 numUnique = 0;
 
-    u64 currentDeps[48]; // note: official PM reuses exheader to save stack space but we have enough of it
-
-    TRY(loadWithoutDependencies(outDebug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo));
-    ProcessData *process = *outProcessData;
-
-
-    listDependencies(currentDeps, &numDeps, exheaderInfo);
-    for (u32 i = 0; i < numDeps; i++) {
-        // Filter duplicate results
-        u32 j;
-        for (j = 0; j < numNewDeps && currentDeps[i] != dependenciesInfo[j].titleId; j++);
-        if (j >= numNewDeps) {
-            dependenciesInfo[numNewDeps++].titleId = currentDeps[i];
-            dependenciesInfo[numNewDeps].count = 1;
-        } else {
-            ++dependenciesInfo[j].count;
-        }
-    }
-
-    ExHeader_Info *depExheaderInfo = NULL;
     FS_ProgramInfo depProgramInfo;
 
-    if (numDeps == 0) {
-        goto add_dup_refs; // official pm forgets to do that
+    res = loadWithoutDependencies(outDebug, outProcessData, programHandle, programInfo, launchFlags, exheaderInfo);
+    ProcessData *process = *outProcessData;
+
+    if (R_FAILED(res)) {
+        if (process != NULL) {
+            svcTerminateProcess(process->handle);
+        }
+
+        return res;
     }
 
-    process->flags |= PROCESSFLAG_DEPENDENCIES_LOADED;
-    depExheaderInfo = ExHeaderInfoHeap_New();
+    ExHeader_Info *depExheaderInfo = ExHeaderInfoHeap_New();
     if (depExheaderInfo == NULL) {
         panic(0);
+    }
+
+    listMergeUniqueDependencies(depProcs, dependencies, remrefcounts, &numUnique, exheaderInfo);
+
+    if (numUnique > 0) {
+        process->flags |= PROCESSFLAG_DEPENDENCIES_LOADED;
     }
 
     /*
@@ -180,81 +164,32 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
             for each dependency:
                 if dep already loaded: if autoloaded increase refcount // note: not autoloaded = not autoterminated
                 else: load new sysmodule w/o its deps (then process its deps), set flag "autoloaded"  return early from entire function if it fails
-        Naturally, it forgets to incref all subsequent dependencies here & also when it factors the duplicate entries in
-
+        Naturally, it forgets to incref all subsequent dependencies here & also when it factors the duplicate entries in,
+        and has a few other bugs (actually I'm not entirely sure... I think it doesn't clear dependencies on termination if it fails)
         It also has a buffer overflow bug if the flattened dep tree has more than 48 elements (but this can never happen in practice)
     */
 
-    for (totalNumDeps = 0; numNewDeps != 0; ) {
-        if (totalNumDeps + numNewDeps > 48) {
-            panic(2);
-        }
+    for (u32 i = 0; i < numUnique; i++) {
+        // Note: numUnique is changed within the loop
+        depProgramInfo.programId = dependencies[i];
+        depProgramInfo.mediaType = MEDIATYPE_NAND;
 
-        // Look up for existing processes
-        ProcessList_Lock(&g_manager.processList);
-        for (u32 i = 0; i < numNewDeps; i++) {
-            FOREACH_PROCESS(&g_manager.processList, process) {
-                if ((process->titleId & ~0xFFULL) == (dependenciesInfo[totalNumDeps + i].titleId & ~0xFFULL)) {
-                    // Note: two processes can't have the same normalized titleId
-                    dependenciesInfo[totalNumDeps + i].process = process;
-                    if (process->flags & PROCESSFLAG_AUTOLOADED) {
-                        if (process->refcount == 0xFF) {
-                            panic(3);
-                        }
-                        ++process->refcount;
-                    }
-                }
-            }
-        }
-        ProcessList_Unlock(&g_manager.processList);
-
-        // Launch the newly needed sysmodules, handle dependencies here and not in the function call to avoid infinite recursion
-        u32 currentNumNewDeps = numNewDeps;
-        numNewDeps = 0;
-        for (u32 i = 0; i < currentNumNewDeps; i++) {
-            if (dependenciesInfo[totalNumDeps + i].process != NULL) {
-                continue;
-            }
-
-            depProgramInfo.programId = dependenciesInfo[i].titleId;
-            depProgramInfo.mediaType = MEDIATYPE_NAND;
-
-            TRYG(launchTitleImpl(NULL, &process, &depProgramInfo, NULL, 0, depExheaderInfo), add_dup_refs);
-
-            listDependencies(currentDeps, &numDeps, depExheaderInfo);
+        res = launchTitleImpl(NULL, &process, &depProgramInfo, NULL, 0, depExheaderInfo);
+        depProcs[i] = process;
+        if (R_SUCCEEDED(res)) {
             process->flags |= PROCESSFLAG_AUTOLOADED | PROCESSFLAG_DEPENDENCIES_LOADED;
-
-            for (u32 i = 0; i < numDeps; i++) {
-                // Filter existing results
-                u32 j;
-                for (j = 0; j < totalNumDeps + numNewDeps && currentDeps[i] != dependenciesInfo[j].titleId; j++);
-                if (j >= totalNumDeps + numNewDeps) {
-                    dependenciesInfo[totalNumDeps + numNewDeps++].titleId = currentDeps[i];
-                    dependenciesInfo[totalNumDeps + numNewDeps].count = 1;
-                } else {
-                    ++dependenciesInfo[j].count;
-                }
-            }
-        }
-
-        totalNumDeps += currentNumNewDeps;
-    }
-
-    add_dup_refs:
-    for (u32 i = 0; i < totalNumDeps; i++) {
-        if (dependenciesInfo[i].process != NULL && (dependenciesInfo[i].process->flags & PROCESSFLAG_AUTOLOADED) != 0) {
-            if (dependenciesInfo[i].process->refcount + dependenciesInfo[i].count - 1 >= 0x100) {
-                panic(3);
-            }
-
-            dependenciesInfo[i].process->refcount += dependenciesInfo[i].count - 1;
+            ProcessData_Incref(process, remrefcounts[i] - 1);
+            remrefcounts[i] = 0;
+            listMergeUniqueDependencies(depProcs, dependencies, remrefcounts, &numUnique, depExheaderInfo); // does some incref too
+        } else if (process != NULL) {
+            svcTerminateProcess(process->handle);
+            ExHeaderInfoHeap_Delete(depExheaderInfo);
+            return res;
         }
     }
 
-    if (depExheaderInfo != NULL) {
-        ExHeaderInfoHeap_Delete(depExheaderInfo);
-    }
 
+    ExHeaderInfoHeap_Delete(depExheaderInfo);
     return res;
 }
 

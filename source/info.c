@@ -30,6 +30,50 @@ Result listDependencies(u64 *dependencies, u32 *numDeps, const ExHeader_Info *ex
     return res;
 }
 
+Result listMergeUniqueDependencies(ProcessData **procs, u64 *dependencies, u32 *remrefcounts, u32 *numDeps, const ExHeader_Info *exheaderInfo)
+{
+    Result res = 0;
+    u32 numDepsUnique = *numDeps;
+    u32 num2;
+
+    u64 deps[48];
+    u32 newrefcounts[48] = {0};
+
+    TRY(listDependencies(deps, &num2, exheaderInfo));
+
+    ProcessList_Lock(&g_manager.processList);
+    for (u32 i = 0; i < num2; i++) {
+        // Filter duplicate results
+        u32 j;
+        for (j = 0; j < numDepsUnique && deps[i] != dependencies[j]; j++);
+        if (j >= numDepsUnique) {
+            if (numDepsUnique >= 48) {
+                panic(2);
+            }
+            dependencies[numDepsUnique] = deps[i];
+            newrefcounts[numDepsUnique] = 1;
+            procs[numDepsUnique] = ProcessList_FindProcessByTitleId(&g_manager.processList, deps[i]);
+            numDepsUnique++;
+        } else {
+            ++newrefcounts[j];
+        }
+    }
+
+    // Apply refcounts
+    for (u32 i = 0; i < numDepsUnique; i++) {
+        if (procs[i] != NULL) {
+            ProcessData_Incref(procs[i], newrefcounts[i]);
+        } else {
+            remrefcounts[i] += newrefcounts[i];
+        }
+    }
+    ProcessList_Unlock(&g_manager.processList);
+
+    *numDeps = numDepsUnique;
+    return res;
+}
+
+
 Result GetTitleExHeaderFlags(ExHeader_Arm11CoreInfo *outCoreInfo, ExHeader_SystemInfoFlags *outSiFlags, const FS_ProgramInfo *programInfo)
 {
     Result res = 0;

@@ -21,7 +21,7 @@ static const ResourceLimitType g_reslimitInitOrder[10] = {
 static ReslimitValues g_o3dsReslimitValues[4] = {
     // APPLICATION
     {
-        0x4000000,  // Allocatable memory
+        0x4000000,  // Allocatable memory (dynamically calculated)
         0x18,       // Max. priority
         32,         // Threads
         32,         // Events
@@ -35,7 +35,7 @@ static ReslimitValues g_o3dsReslimitValues[4] = {
 
     // SYS_APPLET
     {
-        0x2606000,  // Allocatable memory
+        0x2606000,  // Allocatable memory (dynamically calculated)
         4,          // Max priority
         14,         // Threads
         8,          // Events
@@ -49,7 +49,7 @@ static ReslimitValues g_o3dsReslimitValues[4] = {
 
     // LIB_APPLET
     {
-        0x0602000,  // Allocatable memory
+        0x0602000,  // Allocatable memory (dynamically calculated)
         4,          // Max priority
         14,         // Threads
         8,          // Events
@@ -63,7 +63,7 @@ static ReslimitValues g_o3dsReslimitValues[4] = {
 
     // OTHER (BASE sysmodules)
     {
-        0x1682000,  // Allocatable memory
+        0x1682000,  // Allocatable memory (dynamically calculated)
         4,          // Max priority
         202,        // Threads
         248,        // Events
@@ -79,7 +79,7 @@ static ReslimitValues g_o3dsReslimitValues[4] = {
 static ReslimitValues g_n3dsReslimitValues[4] = {
     // APPLICATION
     {
-        0x7C00000,  // Allocatable memory
+        0x7C00000,  // Allocatable memory (dynamically calculated)
         0x18,       // Max. priority
         32,         // Threads
         32,         // Events
@@ -93,7 +93,7 @@ static ReslimitValues g_n3dsReslimitValues[4] = {
 
     // SYS_APPLET
     {
-        0x5E06000,  // Allocatable memory
+        0x5E06000,  // Allocatable memory (dynamically calculated)
         4,          // Max priority
         29,         // Threads
         11,         // Events
@@ -107,7 +107,7 @@ static ReslimitValues g_n3dsReslimitValues[4] = {
 
     // LIB_APPLET
     {
-        0x0602000,  // Allocatable memory
+        0x0602000,  // Allocatable memory (dynamically calculated)
         4,          // Max priority
         14,         // Threads
         8,          // Events
@@ -121,7 +121,7 @@ static ReslimitValues g_n3dsReslimitValues[4] = {
 
     // OTHER (BASE sysmodules)
     {
-        0x2182000,  // Allocatable memory
+        0x2182000,  // Allocatable memory (dynamically calculated)
         4,          // Max priority
         225,        // Threads
         264,        // Events
@@ -138,8 +138,14 @@ static const struct {
     u32 titleUid;
     u32 value;
 } g_startCpuTimeOverrides[] = {
-    // Region-incoherent? CHN/KOR/TWN consistently missing.
-    // Did it appear on 11.4 with the soundhax fix fix, or even before?
+    /*
+        Region-incoherent? CHN/KOR/TWN consistently missing.
+        This seems to be here to replace a 2.0+ kernel workaround for 1.0 titles (maybe?).
+
+        It seems like 1.0 kernel didn't implement cputime reslimit & you could freely access core1.
+        2.1+ kernel returns an error if you try to start an application thread on core1 with cputime=0,
+        except for 1.0 titles for which it automatically sets cputime to 25.
+    */
     { 0x205, 10000 }, // 3DS sound (JPN)
     { 0x215, 10000 }, // 3DS sound (USA)
     { 0x225, 10000 }, // 3DS sound (EUR)

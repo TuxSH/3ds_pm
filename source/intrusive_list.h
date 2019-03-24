@@ -33,7 +33,7 @@ static inline void IntrusiveList_Init(IntrusiveList *ll)
  * @brief Tests if a node is past the end of the list containing it (if any).
  *
  * @param nd The node to test.
- * @return bool_t true iff node is past the end of the list.
+ * @return bool true iff node is past the end of the list.
  */
 static inline bool IntrusiveList_TestEnd(const IntrusiveList *ll, const IntrusiveNode *nd)
 {
@@ -75,7 +75,7 @@ static inline void IntrusiveList_Erase(const IntrusiveNode *nd)
  * @param total_size The total size of the buffer.
  *
  * @pre @ref ll has not been initialized yet.
- * @pre Each element must contain a @ref intrusive_node_t instance at offset 0, which is then used.
+ * @pre Each element must contain a @ref IntrusiveNode instance at offset 0, which is then used.
  */
 static inline void IntrusiveList_CreateFromBuffer(IntrusiveList *ll, void *buf, size_t elemSize, size_t totalSize)
 {

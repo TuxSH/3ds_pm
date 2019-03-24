@@ -35,6 +35,7 @@ void Manager_RegisterKips(void)
         process->refcount = 1;
         process->titleId = 0x0004000100001000ULL; // note: same TID for all builtins
         process->flags = PROCESSFLAG_KIP;
+        process->terminationStatus = TERMSTATUS_RUNNING;
 
         assertSuccess(svcSetProcessResourceLimits(processHandle, g_manager.reslimits[RESLIMIT_CATEGORY_OTHER]));
     }
@@ -44,17 +45,10 @@ void Manager_RegisterKips(void)
 
 Result UnregisterProcess(u64 titleId)
 {
-    ProcessData *process, *foundProcess = NULL;
+    ProcessData *foundProcess = NULL;
 
     ProcessList_Lock(&g_manager.processList);
-
-    FOREACH_PROCESS(&g_manager.processList, process) {
-        if ((process->titleId & ~0xFFULL) == (titleId & ~0xFFULL)) {
-            foundProcess = process;
-            break;
-        }
-    }
-
+    foundProcess = ProcessList_FindProcessByTitleId(&g_manager.processList, titleId);
     if (foundProcess != NULL) {
         if (foundProcess == g_manager.runningApplicationData) {
             g_manager.runningApplicationData = NULL;

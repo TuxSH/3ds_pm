@@ -94,8 +94,6 @@ void processMonitor(void *p)
                 if (!(processBackup.flags & PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED)) {
                     svcCloseHandle(processBackup.handle);
                 }
-                ProcessList_Lock(&g_manager.processList);
-                ProcessList_Unlock(&g_manager.processList);
             }
         }
     }

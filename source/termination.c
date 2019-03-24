@@ -266,7 +266,7 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
     FOREACH_PROCESS(&g_manager.processList, process) {
         if (process->flags & PROCESSFLAG_KIP) {
             continue;
-        } else if (process->pid == callerPid && (process->flags & PROCESSFLAG_AUTOLOADED) != 0) {
+        } else if (process == callerProcess && (process->flags & PROCESSFLAG_AUTOLOADED) != 0) {
             ProcessData_Incref(process, 1);
             continue;
         }
@@ -287,6 +287,20 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
     s64 timeoutTicks = dstTimePoint - svcGetSystemTick();
     commitPendingTerminations(timeoutTicks >= 0 ? ticksToNs(timeoutTicks) : 0LL);
     g_manager.waitingForTermination = false;
+
+    // Custom sanity check: check that all non-KIP processes have been terminated on firmlaunch
+    if (callerProcess == NULL) {
+        ProcessList_Lock(&g_manager.processList);
+        FOREACH_PROCESS(&g_manager.processList, process) {
+            if (!(process->flags & PROCESSFLAG_KIP)
+            && (process->terminationStatus != TERMSTATUS_TERMINATED
+            || !(process->flags & PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED)))
+            {
+                panic(555);
+            }
+        }
+        ProcessList_Unlock(&g_manager.processList);
+    }
 
     // Now, send termination notification to PXI (PID 4)
     assertSuccess(svcClearEvent(g_manager.allNotifiedTerminationEvent));

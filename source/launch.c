@@ -109,7 +109,7 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
 
     process->handle = processHandle;
     process->pid = pid;
-    process->titleId = programInfo->programId;
+    process->titleId = exheaderInfo->aci.local_caps.title_id;;
     process->programHandle = programHandle;
     process->flags = 0; // will be filled later
     process->terminatedNotificationVariation = (launchFlags & 0xF0) >> 4;

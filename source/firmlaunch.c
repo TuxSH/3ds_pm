@@ -39,7 +39,7 @@ static void LaunchFirmAsync(void *argdata)
     // pm has dead code there (notification 0x179, but there's no 'caller process'... (-1))
 
     u64 firmTid = args->firmTidLow; // note: tidHigh doesn't matter
-    firmTid = IS_N3DS ? (firmTid & ~0xF0000000) | 0x20000000 : firmTid;
+    firmTid = IS_N3DS ? (firmTid & ~N3DS_TID_MASK) | N3DS_TID_BIT : firmTid;
     assertSuccess(svcKernelSetState(0, firmTid));
 }
 

@@ -3,6 +3,7 @@
 #include "process_monitor.h"
 #include "exheader_info_heap.h"
 #include "termination.h"
+#include "reslimit.h"
 #include "manager.h"
 #include "util.h"
 
@@ -27,6 +28,9 @@ static void cleanupProcess(ProcessData *process)
     }
 
     if (process == g_manager.runningApplicationData) {
+        if (IS_N3DS && APPMEMTYPE == 6) {
+            assertSuccess(resetAppMemLimit());
+        }
         g_manager.runningApplicationData = NULL;
     }
 

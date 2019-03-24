@@ -48,6 +48,28 @@ static void blacklistServices(u64 titleId, char (*serviceAccessList)[8])
     }
 }
 
+static Result registerProgram(u64 *programHandle, const FS_ProgramInfo *programInfo, const FS_ProgramInfo *programInfoUpdate)
+{
+    u64 tid = programInfo->programId;
+    u64 tidu = programInfoUpdate->programId;
+    Result res = 0;
+
+    if (IS_N3DS) {
+        tid  = (tid  & ~N3DS_TID_MASK) | N3DS_TID_BIT;
+        tidu = (tidu & ~N3DS_TID_MASK) | N3DS_TID_BIT;
+        res = LOADER_RegisterProgram(programHandle, tid, programInfo->mediaType, tidu, programInfoUpdate->mediaType);
+        if (R_FAILED(res)) {
+            tid  &= ~N3DS_TID_MASK;
+            tidu &= ~N3DS_TID_MASK;
+            res = LOADER_RegisterProgram(programHandle, tid, programInfo->mediaType, tidu, programInfoUpdate->mediaType);
+        }
+    } else {
+        res = LOADER_RegisterProgram(programHandle, tid, programInfo->mediaType, tidu, programInfoUpdate->mediaType);
+    }
+
+    return res;
+}
+
 // Note: official PM has two distinct functions for sysmodule vs. regular app. We refactor that into a single function.
 static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
     const FS_ProgramInfo *programInfoUpdate, u32 launchFlags, ExHeader_Info *exheaderInfo);
@@ -208,6 +230,7 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
         launchFlags |= PMLAUNCHFLAG_LOAD_DEPENDENCIES;
     } else {
         launchFlags &= ~(PMLAUNCHFLAG_USE_UPDATE_TITLE | PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION);
+        launchFlags &= ~(PMLAUNCHFLAG_FORCE_USE_O3DS_APP_MEM | PMLAUNCHFLAG_FORCE_USE_O3DS_MAX_APP_MEM);
     }
 
     Result res = 0;
@@ -215,8 +238,7 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
     StartupInfo si = {0};
 
     programInfoUpdate = (launchFlags & PMLAUNCHFLAG_USE_UPDATE_TITLE) ? programInfoUpdate : programInfo;
-    TRY(LOADER_RegisterProgram(&programHandle, programInfo->programId, programInfo->mediaType,
-        programInfoUpdate->programId, programInfoUpdate->mediaType));
+    TRY(registerProgram(&programHandle, programInfo, programInfoUpdate));
 
     res = LOADER_GetProgramInfo(exheaderInfo, programHandle);
     res = R_SUCCEEDED(res) && exheaderInfo->aci.local_caps.core_info.core_version != SYSCOREVER ? (Result)0xC8A05800 : res;
@@ -224,6 +246,26 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
     if (R_FAILED(res)) {
         LOADER_UnregisterProgram(programHandle);
         return res;
+    }
+
+    // Change APPMEMALLOC if needed
+    if (IS_N3DS && APPMEMTYPE == 6 && (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) != 0) {
+        u32 limitMb;
+        SystemMode n3dsSystemMode = exheaderInfo->aci.local_caps.core_info.n3ds_system_mode;
+        if ((launchFlags & PMLAUNCHFLAG_FORCE_USE_O3DS_APP_MEM) || n3dsSystemMode == SYSMODE_O3DS_PROD) {
+            if ((launchFlags & PMLAUNCHFLAG_FORCE_USE_O3DS_APP_MEM) & PMLAUNCHFLAG_FORCE_USE_O3DS_MAX_APP_MEM) {
+                limitMb = 96;
+            } else {
+                switch (exheaderInfo->aci.local_caps.core_info.o3ds_system_mode) {
+                    case SYSMODE_O3DS_PROD: limitMb = 64; break;
+                    case SYSMODE_DEV1:      limitMb = 96; break;
+                    case SYSMODE_DEV2:      limitMb = 80; break;
+                    default:                limitMb = 0;  break;
+                }
+            }
+
+            setAppMemLimit(limitMb << 20);
+        }
     }
 
     blacklistServices(exheaderInfo->aci.local_caps.title_id, exheaderInfo->aci.local_caps.service_access);

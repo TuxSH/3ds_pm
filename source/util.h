@@ -14,6 +14,8 @@
 #define SYSMEMALLOC             REG32(0x1FF80044)
 
 #define IS_N3DS                 (*(vu32 *)0x1FF80030 >= 6) // APPMEMTYPE. Hacky but doesn't use APT
+#define N3DS_TID_MASK           0xF0000000ULL
+#define N3DS_TID_BIT            0x20000000ULL
 
 #define TRY(expr)               if(R_FAILED(res = (expr))) return res;
 #define TRYG(expr, label)       if(R_FAILED(res = (expr))) goto label;

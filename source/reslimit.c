@@ -18,6 +18,8 @@ static const ResourceLimitType g_reslimitInitOrder[10] = {
     RESLIMIT_CPUTIME,
 };
 
+static u32 g_currentAppMemLimit = 0, g_defaultAppMemLimit;
+
 static ReslimitValues g_o3dsReslimitValues[4] = {
     // APPLICATION
     {
@@ -188,6 +190,7 @@ static ReslimitValues *fixupReslimitValues(void)
     }
 
     values[0][0] = APPMEMALLOC;
+    g_defaultAppMemLimit = APPMEMALLOC;
 
     return values;
 }
@@ -202,6 +205,22 @@ Result initializeReslimits(void)
     }
 
     return res;
+}
+
+Result setAppMemLimit(u32 limit)
+{
+    if (g_currentAppMemLimit == g_defaultAppMemLimit) {
+        return 0;
+    }
+
+    ResourceLimitType category = RESLIMIT_COMMIT;
+    s64 value = limit | ((u64)limit << 32); // high u32 is the value written to APPMEMALLOC
+    return svcSetResourceLimitValues(g_manager.reslimits[0], &category, &value, 1);
+}
+
+Result resetAppMemLimit(void)
+{
+    return setAppMemLimit(g_defaultAppMemLimit);
 }
 
 Result setAppCpuTimeLimit(s64 limit)

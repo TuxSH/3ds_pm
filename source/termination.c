@@ -301,9 +301,9 @@ ProcessData *terminateAllProcesses(u32 callerPid, s64 timeout)
     }
     ProcessList_Unlock(&g_manager.processList);
 
-    // Allow 24 extra seconds for PXI (approx 402167783 ticks)
+    // Allow 1.5 extra seconds for PXI (approx 402167783 ticks)
     timeoutTicks = dstTimePoint - svcGetSystemTick();
-    commitPendingTerminations(24 * 1000 * 1000 * 1000LL + (timeoutTicks >= 0 ? ticksToNs(timeoutTicks) : 0LL));
+    commitPendingTerminations(1500 * 1000 * 1000LL + (timeoutTicks >= 0 ? ticksToNs(timeoutTicks) : 0LL));
     g_manager.waitingForTermination = false;
 
     return callerProcess;

@@ -31,7 +31,7 @@ void pmAppHandleCommands(void *ctx)
             cmdbuf[0] = IPC_MakeHeader(1, 2, 0);
             break;
         case 2:
-            if (cmdhdr == IPC_MakeHeader(2, 2, 2) || (cmdbuf[3] & 0xF) != 0xA) {
+            if (cmdhdr != IPC_MakeHeader(2, 2, 2) || (cmdbuf[3] & 0xF) != 0xA) {
                 goto invalid_command;
             }
             size = cmdbuf[3] >> 4;
@@ -84,7 +84,7 @@ void pmAppHandleCommands(void *ctx)
             memcpy(cmdbuf + 4, &siFlags, sizeof(ExHeader_SystemInfoFlags));
             break;
         case 9:
-            if (cmdhdr == IPC_MakeHeader(9, 1, 2) || (cmdbuf[2] & 0xF) != 0xA) {
+            if (cmdhdr != IPC_MakeHeader(9, 1, 2) || (cmdbuf[2] & 0xF) != 0xA) {
                 goto invalid_command;
             }
             size = cmdbuf[2] >> 4;

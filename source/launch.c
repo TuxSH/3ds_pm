@@ -263,7 +263,7 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
         svcTerminateProcess(process->handle);
     } else if (process != NULL) {
         // official PM sets it but forgets to clear it on failure...
-        process->flags = (launchFlags & PMLAUNCHFLAG_NOTIFY_TERMINATION) ? PROCESSFLAG_NOTIFY_TERMINATION : 0;
+        process->flags |= (launchFlags & PMLAUNCHFLAG_NOTIFY_TERMINATION) ? PROCESSFLAG_NOTIFY_TERMINATION : 0;
     }
 
     return res;

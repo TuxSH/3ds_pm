@@ -81,9 +81,14 @@ void processMonitor(void *p)
                 process->terminationStatus = TERMSTATUS_TERMINATED;
                 if (process->flags & PROCESSFLAG_NOTIFY_TERMINATION) {
                     process->flags |= PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED;
-                    processBackup = *process; // <-- make sure no list access is done through this node
-                } else {
-                    processBackup = *process; // <-- make sure no list access is done through this node
+                }
+
+                processBackup = *process; // <-- make sure no list access is done through this node
+
+                // Note: PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED can be set by terminateProcessImpl
+                // APT is shit, why must an app call APT to ask to terminate itself?
+
+                if (!(process->flags & PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED)) {
                     ProcessList_Delete(&g_manager.processList, process);
                 }
             }

@@ -13,7 +13,7 @@ static Result terminateUnusedDependencies(const u64 *dependencies, u32 numDeps)
 
     ProcessList_Lock(&g_manager.processList);
     FOREACH_PROCESS(&g_manager.processList, process) {
-        if (process->terminationStatus == TERMSTATUS_RUNNING || !(process->flags & PROCESSFLAG_AUTOLOADED)) {
+        if (process->terminationStatus != TERMSTATUS_RUNNING || !(process->flags & PROCESSFLAG_AUTOLOADED)) {
             continue;
         }
 

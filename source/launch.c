@@ -112,9 +112,8 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
     TRY(svcSetProcessAffinityMask(processHandle, &affinityMask, 2));
     TRY(svcSetProcessIdealProcessor(processHandle, localcaps->core_info.ideal_processor));
 
-    setAppCpuTimeLimitAndSchedModeFromDescriptor(localcaps->title_id, localcaps->reslimits[0]);
-
     if (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) {
+        setAppCpuTimeLimitAndSchedModeFromDescriptor(localcaps->title_id, localcaps->reslimits[0]);
         (*outProcessData)->flags |= PROCESSFLAG_NORMAL_APPLICATION; // not in official PM
     }
 
@@ -132,7 +131,7 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
 
     u64 dependencies[48];
     u32 remrefcounts[48] = {0};
-    ProcessData *depProcs[48];
+    ProcessData *depProcs[48] = {NULL};
     u32 numUnique = 0;
 
     FS_ProgramInfo depProgramInfo;
@@ -170,6 +169,9 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
     */
 
     for (u32 i = 0; i < numUnique; i++) {
+        if (depProcs[i] != NULL) {
+            continue;
+        }
         // Note: numUnique is changed within the loop
         depProgramInfo.programId = dependencies[i];
         depProgramInfo.mediaType = MEDIATYPE_NAND;

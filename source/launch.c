@@ -124,7 +124,7 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
     }
 
     u32 serviceCount;
-    for(serviceCount = 1; serviceCount <= 34 && *(u64 *)localcaps->service_access[serviceCount - 1] != 0; serviceCount++);
+    for(serviceCount = 0; serviceCount < 34 && *(u64 *)localcaps->service_access[serviceCount] != 0; serviceCount++);
 
     TRY(FSREG_Register(pid, programHandle, programInfo, &localcaps->storage_info));
     TRY(SRVPM_RegisterProcess(pid, serviceCount, localcaps->service_access));

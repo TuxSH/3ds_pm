@@ -87,8 +87,13 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
 
     process->handle = processHandle;
     process->pid = pid;
+    process->titleId = programInfo->programId;
     process->programHandle = programHandle;
+    process->flags = 0; // will be filled later
+    process->terminatedNotificationVariation = (launchFlags & 0xF0) >> 4;
+    process->terminationStatus = TERMSTATUS_RUNNING;
     process->refcount = 1;
+
     ProcessList_Unlock(&g_manager.processList);
     svcSignalEvent(g_manager.newProcessEvent);
 

@@ -49,11 +49,18 @@ Result listAndTerminateDependencies(ProcessData *process, ExHeader_Info *exheade
 
 static Result terminateProcessImpl(ProcessData *process, ExHeader_Info *exheaderInfo)
 {
-    ProcessData_SendTerminationNotification(process);
+    // NOTE: list dependencies BEFORE sending the notification -- race condition material
+    Result res = 0;
+    u64 dependencies[48]; // note: official pm reuses exheaderInfo to save space
+    u32 numDeps = 0;
+
     if (process->flags & PROCESSFLAG_DEPENDENCIES_LOADED) {
+        TRY(getAndListDependencies(dependencies, &numDeps, process, exheaderInfo));
         process->flags &= ~PROCESSFLAG_DEPENDENCIES_LOADED;
-        return listAndTerminateDependencies(process, exheaderInfo);
+        ProcessData_SendTerminationNotification(process);
+        return terminateUnusedDependencies(dependencies, numDeps);
     } else {
+        ProcessData_SendTerminationNotification(process);
         return 0;
     }
 }
@@ -98,7 +105,7 @@ static Result commitPendingTerminations(s64 timeout)
 
             ProcessList_Unlock(&g_manager.processList);
 
-            assertSuccess(svcWaitSynchronization(g_manager.allNotifiedTerminationEvent, timeout));
+            assertSuccess(svcWaitSynchronization(g_manager.allNotifiedTerminationEvent, -1LL));
         }
     } else {
         res = 0;

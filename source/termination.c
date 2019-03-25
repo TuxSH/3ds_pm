@@ -124,6 +124,7 @@ static void TerminateProcessOrTitleAsync(void *argdata)
 
     ProcessData *process;
     bool notify = false;
+    u8 variation;
 
     if (args->timeout >= 0) {
         assertSuccess(svcClearEvent(g_manager.allNotifiedTerminationEvent));
@@ -140,6 +141,7 @@ static void TerminateProcessOrTitleAsync(void *argdata)
         if ((args->useTitleId && process->titleId == args->id) || process->pid == args->id) {
             if (process->flags & PROCESSFLAG_NOTIFY_TERMINATION) {
                 notify = true;
+                variation = process->terminatedNotificationVariation;
                 process->flags = (process->flags & ~PROCESSFLAG_NOTIFY_TERMINATION) | PROCESSFLAG_NOTIFY_TERMINATION_TERMINATED;
             }
             terminateProcessImpl(process, exheaderInfo);
@@ -156,7 +158,7 @@ static void TerminateProcessOrTitleAsync(void *argdata)
         commitPendingTerminations(args->timeout);
         g_manager.waitingForTermination = false;
         if (notify) {
-            notifySubscribers(0x110 + process->terminatedNotificationVariation);
+            notifySubscribers(0x110 + variation);
         }
     }
 }

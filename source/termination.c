@@ -138,6 +138,9 @@ static void TerminateProcessOrTitleAsync(void *argdata)
 
     ProcessList_Lock(&g_manager.processList);
     FOREACH_PROCESS(&g_manager.processList, process) {
+        // It's the only place where it uses the full titleId, and doesn't break after the first result.
+        // Maybe it's to allow killing all the builtins at once with their dummy titleIds? Otherwise,
+        // two processes can't have the same titleId.
         if ((args->useTitleId && process->titleId == args->id) || process->pid == args->id) {
             if (process->flags & PROCESSFLAG_NOTIFY_TERMINATION) {
                 notify = true;

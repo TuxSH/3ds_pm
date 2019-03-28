@@ -1,3 +1,29 @@
+/*
+*   This file is part of Luma3DS
+*   Copyright (C) 2016-2019 Aurora Wright, TuxSH
+*
+*   This program is free software: you can redistribute it and/or modify
+*   it under the terms of the GNU General Public License as published by
+*   the Free Software Foundation, either version 3 of the License, or
+*   (at your option) any later version.
+*
+*   This program is distributed in the hope that it will be useful,
+*   but WITHOUT ANY WARRANTY; without even the implied warranty of
+*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*   GNU General Public License for more details.
+*
+*   You should have received a copy of the GNU General Public License
+*   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*
+*   Additional Terms 7.b and 7.c of GPLv3 apply to this file:
+*       * Requiring preservation of specified reasonable legal notices or
+*         author attributions in that material or in the Appropriate Legal
+*         Notices displayed by works containing it.
+*       * Prohibiting misrepresentation of the origin of that material,
+*         or requiring that modified versions of such material be marked in
+*         reasonable ways as different from the original version.
+*/
+
 #include <3ds.h>
 #include "service_manager.h"
 
@@ -26,6 +52,14 @@ Result ServiceManager_Run(const ServiceManagerServiceEntry *services, const Serv
     u32 *cmdbuf = getThreadCommandBuffer();
 
     TRY(srvEnableNotification(&waitHandles[0]));
+
+    // Subscribe to notifications if needed.
+    for (u32 i = 0; notifications[i].handler != NULL; i++) {
+        // Termination & ready for reboot events send by PM using PublishToProcess don't require subscription.
+        if (notifications[i].id != 0x100 && notifications[i].id != 0x179) {
+            TRY(srvSubscribe(notifications[i].id));
+        }
+    }
 
     for (u32 i = 0; i < numServices; i++) {
         if (!services[i].isGlobalPort) {
@@ -122,6 +156,14 @@ Result ServiceManager_Run(const ServiceManagerServiceEntry *services, const Serv
 cleanup:
     for (u32 i = 0; i < 1 + numServices + numActiveSessions; i++) {
         svcCloseHandle(waitHandles[i]);
+    }
+
+    // Subscribe to notifications if needed.
+    for (u32 i = 0; notifications[i].handler != NULL; i++) {
+        // Termination & ready for reboot events send by PM using PublishToProcess don't require subscription.
+        if (notifications[i].id != 0x100 && notifications[i].id != 0x179) {
+            TRY(srvUnsubscribe(notifications[i].id));
+        }
     }
 
     for (u32 i = 0; i < numServices; i++) {

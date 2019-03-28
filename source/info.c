@@ -5,6 +5,27 @@
 #include "info.h"
 #include "util.h"
 
+Result registerProgram(u64 *programHandle, const FS_ProgramInfo *programInfo, const FS_ProgramInfo *programInfoUpdate)
+{
+    FS_ProgramInfo pi = *programInfo, piu = *programInfoUpdate;
+    Result res = 0;
+
+    if (IS_N3DS) {
+        pi.programId = (pi.programId  & ~N3DS_TID_MASK) | N3DS_TID_BIT;
+        piu.programId = (piu.programId & ~N3DS_TID_MASK) | N3DS_TID_BIT;
+        res = LOADER_RegisterProgram(programHandle, &pi, &piu);
+        if (R_FAILED(res)) {
+            pi.programId  &= ~N3DS_TID_MASK;
+            piu.programId &= ~N3DS_TID_MASK;
+            res = LOADER_RegisterProgram(programHandle, &pi, &piu);
+        }
+    } else {
+        res = LOADER_RegisterProgram(programHandle, &pi, &piu);
+    }
+
+    return res;
+}
+
 Result getAndListDependencies(u64 *dependencies, u32 *numDeps, ProcessData *process, ExHeader_Info *exheaderInfo)
 {
     Result res = 0;
@@ -88,8 +109,7 @@ Result GetTitleExHeaderFlags(ExHeader_Arm11CoreInfo *outCoreInfo, ExHeader_Syste
         panic(0);
     }
 
-    res = LOADER_RegisterProgram(&programHandle, programInfo->programId, programInfo->mediaType,
-    programInfo->programId, programInfo->mediaType);
+    res = registerProgram(&programHandle, programInfo, programInfo);
 
     if (R_SUCCEEDED(res))
     {

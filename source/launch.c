@@ -48,28 +48,6 @@ static void blacklistServices(u64 titleId, char (*serviceAccessList)[8])
     }
 }
 
-static Result registerProgram(u64 *programHandle, const FS_ProgramInfo *programInfo, const FS_ProgramInfo *programInfoUpdate)
-{
-    u64 tid = programInfo->programId;
-    u64 tidu = programInfoUpdate->programId;
-    Result res = 0;
-
-    if (IS_N3DS) {
-        tid  = (tid  & ~N3DS_TID_MASK) | N3DS_TID_BIT;
-        tidu = (tidu & ~N3DS_TID_MASK) | N3DS_TID_BIT;
-        res = LOADER_RegisterProgram(programHandle, tid, programInfo->mediaType, tidu, programInfoUpdate->mediaType);
-        if (R_FAILED(res)) {
-            tid  &= ~N3DS_TID_MASK;
-            tidu &= ~N3DS_TID_MASK;
-            res = LOADER_RegisterProgram(programHandle, tid, programInfo->mediaType, tidu, programInfoUpdate->mediaType);
-        }
-    } else {
-        res = LOADER_RegisterProgram(programHandle, tid, programInfo->mediaType, tidu, programInfoUpdate->mediaType);
-    }
-
-    return res;
-}
-
 // Note: official PM has two distinct functions for sysmodule vs. regular app. We refactor that into a single function.
 static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
     const FS_ProgramInfo *programInfoUpdate, u32 launchFlags, ExHeader_Info *exheaderInfo);

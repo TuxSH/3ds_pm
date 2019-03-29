@@ -62,6 +62,10 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
     ProcessData *process;
     const ExHeader_Arm11SystemLocalCapabilities *localcaps = &exheaderInfo->aci.local_caps;
 
+    if (debug != NULL) {
+        *debug = 0;
+    }
+
     if (outProcessData != NULL) {
         *outProcessData = NULL;
     }
@@ -299,7 +303,7 @@ static Result launchTitleImplWrapper(Handle *outDebug, u32 *outPid, const FS_Pro
     ProcessData *process;
     Result res = launchTitleImpl(outDebug, &process, programInfo, programInfoUpdate, launchFlags, exheaderInfo);
 
-    if (outPid != NULL) {
+    if (outPid != NULL && process != NULL) {
         *outPid = process->pid;
     }
 

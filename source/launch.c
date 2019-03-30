@@ -49,7 +49,7 @@ static void blacklistServices(u64 titleId, char (*serviceAccessList)[8])
 }
 
 // Note: official PM has two distinct functions for sysmodule vs. regular app. We refactor that into a single function.
-static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
+static Result launchTitleImpl(Handle *outDebug, ProcessData **outProcessData, const FS_ProgramInfo *programInfo,
     const FS_ProgramInfo *programInfoUpdate, u32 launchFlags, ExHeader_Info *exheaderInfo);
 
 // Note: official PM doesn't include svcDebugActiveProcess in this function, but rather in the caller handling dependencies
@@ -62,8 +62,8 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
     ProcessData *process;
     const ExHeader_Arm11SystemLocalCapabilities *localcaps = &exheaderInfo->aci.local_caps;
 
-    if (debug != NULL) {
-        *debug = 0;
+    if (outDebug != NULL) {
+        *outDebug = 0;
     }
 
     if (outProcessData != NULL) {
@@ -126,7 +126,7 @@ static Result loadWithoutDependencies(Handle *outDebug, ProcessData **outProcess
         (*outProcessData)->flags |= PROCESSFLAG_NORMAL_APPLICATION; // not in official PM
     }
 
-    if (launchFlags & PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION) {
+    if (outDebug != NULL) {
         TRY(svcDebugActiveProcess(outDebug, pid));
     }
 
@@ -149,6 +149,11 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
     ProcessData *process = *outProcessData;
 
     if (R_FAILED(res)) {
+        if (outDebug != NULL) {
+            svcCloseHandle(*outDebug);
+            *outDebug = 0;
+        }
+
         if (process != NULL) {
             svcTerminateProcess(process->handle);
         }
@@ -193,6 +198,11 @@ static Result loadWithDependencies(Handle *outDebug, ProcessData **outProcessDat
             remrefcounts[i] = 0;
             listMergeUniqueDependencies(depProcs, dependencies, remrefcounts, &numUnique, depExheaderInfo); // does some incref too
         } else if (process != NULL) {
+            if (outDebug != NULL) {
+                svcCloseHandle(*outDebug);
+                *outDebug = 0;
+            }
+
             svcTerminateProcess(process->handle);
             ExHeaderInfoHeap_Delete(depExheaderInfo);
             return res;

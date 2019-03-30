@@ -28,14 +28,14 @@ static void cleanupProcess(ProcessData *process)
     }
 
     ProcessList_Lock(&g_manager.processList);
-    if (process->handle == g_manager.runningApplicationData->handle) {
+    if (g_manager.runningApplicationData != NULL && process->handle == g_manager.runningApplicationData->handle) {
         if (IS_N3DS && APPMEMTYPE == 6) {
             assertSuccess(resetAppMemLimit());
         }
         g_manager.runningApplicationData = NULL;
     }
 
-    if (process->handle == g_manager.debugData->handle) {
+    if (g_manager.debugData != NULL && process->handle == g_manager.debugData->handle) {
         g_manager.debugData = NULL;
     }
     ProcessList_Unlock(&g_manager.processList);

@@ -273,6 +273,7 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
     }
 
     ProcessData *process = *outProcessData;
+    ProcessList_Lock(&g_manager.processList);
     if (launchFlags & PMLAUNCHFLAG_QUEUE_DEBUG_APPLICATION) {
         // saved field is different in official pm
         // this also means official pm can't launch a title with a debug flag and an application
@@ -290,6 +291,7 @@ static Result launchTitleImpl(Handle *debug, ProcessData **outProcessData, const
             notifySubscribers(0x10C);
         }
     }
+    ProcessList_Unlock(&g_manager.processList);
 
     cleanup:
     process = *outProcessData;
@@ -350,9 +352,11 @@ Result LaunchTitle(u32 *outPid, const FS_ProgramInfo *programInfo, u32 launchFla
         panic(4);
     }
 
+    ProcessList_Lock(&g_manager.processList);
     if ((g_manager.runningApplicationData != NULL || g_manager.debugData != NULL) && (launchFlags & PMLAUNCHFLAG_NORMAL_APPLICATION) != 0) {
         return 0xC8A05BF0;
     }
+    ProcessList_Unlock(&g_manager.processList);
 
     ProcessList_Lock(&g_manager.processList);
     FOREACH_PROCESS(&g_manager.processList, process) {
@@ -392,9 +396,13 @@ Result LaunchTitleUpdate(const FS_ProgramInfo *programInfo, const FS_ProgramInfo
     if (g_manager.preparingForReboot) {
         return 0xC8A05801;
     }
+
+    ProcessList_Lock(&g_manager.processList);
     if (g_manager.runningApplicationData != NULL || g_manager.debugData != NULL) {
         return 0xC8A05BF0;
     }
+    ProcessList_Unlock(&g_manager.processList);
+
     if (!(launchFlags & ~PMLAUNCHFLAG_NORMAL_APPLICATION)) {
         return 0xD8E05802;
     }
@@ -416,11 +424,15 @@ Result LaunchTitleUpdate(const FS_ProgramInfo *programInfo, const FS_ProgramInfo
 
 Result LaunchApp(const FS_ProgramInfo *programInfo, u32 launchFlags)
 {
+    ProcessList_Lock(&g_manager.processList);
     if (g_manager.runningApplicationData != NULL || g_manager.debugData != NULL) {
+        ProcessList_Unlock(&g_manager.processList);
         return 0xC8A05BF0;
     }
 
     assertSuccess(setAppCpuTimeLimit(0));
+    ProcessList_Unlock(&g_manager.processList);
+
     return LaunchTitle(NULL, programInfo, launchFlags | PMLAUNCHFLAG_LOAD_DEPENDENCIES | PMLAUNCHFLAG_NORMAL_APPLICATION);
 }
 
@@ -429,10 +441,14 @@ Result RunQueuedProcess(Handle *outDebug)
     Result res = 0;
     StartupInfo si = {0};
 
+    ProcessList_Lock(&g_manager.processList);
+
     if (g_manager.debugData == NULL) {
+        ProcessList_Unlock(&g_manager.processList);
         return 0xD8A05804;
     } else if ((g_manager.debugData->flags & PROCESSFLAG_NORMAL_APPLICATION) && g_manager.runningApplicationData != NULL) {
         // Not in official PM
+        ProcessList_Unlock(&g_manager.processList);
         return 0xC8A05BF0;
     }
 
@@ -463,21 +479,27 @@ Result RunQueuedProcess(Handle *outDebug)
     }
 
     ExHeaderInfoHeap_Delete(exheaderInfo);
+    ProcessList_Unlock(&g_manager.processList);
 
     return res;
 }
 
 Result LaunchAppDebug(Handle *outDebug, const FS_ProgramInfo *programInfo, u32 launchFlags)
 {
+    ProcessList_Lock(&g_manager.processList);
     if (g_manager.debugData != NULL) {
+        ProcessList_Unlock(&g_manager.processList);
         return RunQueuedProcess(outDebug);
     }
 
     if (g_manager.runningApplicationData != NULL) {
+        ProcessList_Unlock(&g_manager.processList);
         return 0xC8A05BF0;
     }
 
     assertSuccess(setAppCpuTimeLimit(0));
+    ProcessList_Unlock(&g_manager.processList);
+
     return launchTitleImplWrapper(outDebug, NULL, programInfo, programInfo,
         (launchFlags & ~PMLAUNCHFLAG_USE_UPDATE_TITLE) | PMLAUNCHFLAG_NORMAL_APPLICATION);
 }
